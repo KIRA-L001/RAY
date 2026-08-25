@@ -1,5 +1,12 @@
 import * as cheerio from "cheerio";
 
+export interface ExtractedVariant {
+  name: string;
+  attributes: Record<string, string>;
+  available: boolean;
+  priceMinor?: number;
+}
+
 export interface ExtractedProduct {
   name: string;
   description?: string;
@@ -8,6 +15,7 @@ export interface ExtractedProduct {
   priceMinor: number;
   currency: string;
   confidence: number;
+  variants: ExtractedVariant[];
 }
 
 const SYMBOL_CURRENCY: Record<string, string> = {
@@ -34,7 +42,15 @@ interface RawProduct {
   currency?: string;
 }
 
-/** JSON-LD schema.org Product — the reliable structured path when present. */
+/** Offers can be a plain Offer, an array of them, or an AggregateOffer wrapping an inner offers[]. */
+function flattenOffers(offers: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(offers)) return offers as Array<Record<string, unknown>>;
+  if (typeof offers === "object" && offers !== null && "offers" in offers) {
+    const inner = (offers as { offers?: unknown }).offers;
+    return Array.isArray(inner) ? (inner as Array<Record<string, unknown>>) : [];
+  }
+  return typeof offers === "object" && offers !== null ? [offers as Record<string, unknown>] : [];
+}
 function fromJsonLd($: cheerio.CheerioAPI): RawProduct | null {
   for (const el of $('script[type="application/ld+json"]').toArray()) {
     try {
@@ -53,13 +69,12 @@ function fromJsonLd($: cheerio.CheerioAPI): RawProduct | null {
             name?: string;
             description?: string;
             brand?: { name?: string } | string;
-            offers?:
-              | { price?: string; priceCurrency?: string }
-              | Array<{ price?: string; priceCurrency?: string }>;
+            offers?: unknown;
           }
         | undefined;
       if (!product?.name) continue;
-      const offer = Array.isArray(product.offers) ? product.offers[0] : product.offers;
+      const offerList = flattenOffers(product.offers);
+      const offer = offerList[0] as { price?: unknown; priceCurrency?: unknown } | undefined;
       const priceMinor = offer?.price != null ? toMinor(String(offer.price)) : null;
       if (!priceMinor) continue;
       return {
@@ -67,7 +82,7 @@ function fromJsonLd($: cheerio.CheerioAPI): RawProduct | null {
         description: product.description,
         brand: typeof product.brand === "string" ? product.brand : product.brand?.name,
         priceMinor,
-        currency: offer?.priceCurrency ?? "INR",
+        currency: typeof offer?.priceCurrency === "string" ? offer.priceCurrency : "INR",
       };
     } catch {
       // malformed ld+json: ignore this script block
@@ -142,6 +157,62 @@ export function extractProduct(html: string, sourceUrl?: string): ExtractedProdu
       ? `${raw.description.slice(0, 500)}…`
       : raw.description;
 
+  /** JSON-LD AggregateOffer sub-offers and <select> pickers become variants. */
+  const variants: ExtractedVariant[] = [];
+  for (const el of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const parsed: unknown = JSON.parse($(el).text());
+      const nodes = Array.isArray(parsed) ? parsed : [parsed];
+      const graph = nodes.flatMap((n) =>
+        typeof n === "object" && n !== null && "@graph" in n
+          ? ((n as { "@graph": unknown[] })["@graph"] as unknown[])
+          : [n],
+      );
+      for (const node of graph) {
+        if (typeof node !== "object" || node === null || (node as { "@type"?: unknown })["@type"] !== "Product")
+          continue;
+        const offers = (node as { offers?: unknown }).offers;
+        const list = flattenOffers(offers);
+        // A single plain Offer is not a variant list; only multi-offer aggregates are.
+        if (list.length > 1) {
+          for (const offer of list) {
+            const o = offer as { name?: string; price?: unknown; availability?: string };
+            const variantPrice = o.price != null ? toMinor(String(o.price)) : undefined;
+            variants.push({
+              name: (o.name ?? `Option ${variants.length + 1}`).slice(0, 100),
+              attributes: {},
+              available: !o.availability || o.availability.includes("InStock"),
+              ...(variantPrice ? { priceMinor: variantPrice } : {}),
+            });
+          }
+        }
+      }
+    } catch {
+      // malformed ld+json: ignore this script block
+    }
+  }
+  for (const select of $("select").toArray()) {
+    const label =
+      $(select).attr("name") ??
+      $(select).attr("id") ??
+      $(select).prev("label").text().trim() ??
+      "option";
+    const options = $(select)
+      .find("option")
+      .map((_, el) => $(el).text().trim())
+      .get()
+      .filter((t) => t && !/^select/i.test(t));
+    if (options.length > 1) {
+      for (const option of options) {
+        variants.push({
+          name: `${label}: ${option}`.slice(0, 100),
+          attributes: { [label]: option },
+          available: true,
+        });
+      }
+    }
+  }
+
   return {
     name: raw.name.slice(0, 300),
     description,
@@ -150,6 +221,11 @@ export function extractProduct(html: string, sourceUrl?: string): ExtractedProdu
     priceMinor: raw.priceMinor,
     currency: raw.currency ?? guessCurrencyFromPage($) ?? "INR",
     confidence: Math.round(confidence * 100) / 100,
+    // Always at least one variant so carts/orders have something to attach to.
+    variants:
+      variants.length > 0
+        ? variants
+        : [{ name: "Default", attributes: {}, available: true, priceMinor: raw.priceMinor }],
   };
 
   function guessCurrencyFromPage(page: cheerio.CheerioAPI): string | undefined {

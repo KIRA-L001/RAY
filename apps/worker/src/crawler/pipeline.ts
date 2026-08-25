@@ -62,7 +62,7 @@ async function extractCandidates(websiteId: string): Promise<number> {
 async function upsertProduct(
   websiteId: string,
   sourceUrl: string,
-  product: ExtractedProduct,
+  product_: ExtractedProduct,
 ): Promise<void> {
   const db = database();
   const website = await db.website.findUnique({ where: { id: websiteId }, select: { merchantId: true } });
@@ -70,25 +70,25 @@ async function upsertProduct(
 
   // ponytail: flat category assignment; parentId tree stays unpopulated until a taxonomy need is real
   let categoryId: string | undefined;
-  if (product.category) {
+  if (product_.category) {
     const slug =
-      product.category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) ||
+      product_.category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) ||
       "uncategorized";
     const category = await db.category.upsert({
       where: { websiteId_slug: { websiteId, slug } },
-      create: { id: newId("cat"), websiteId, merchantId: website.merchantId, name: product.category.slice(0, 100), slug },
+      create: { id: newId("cat"), websiteId, merchantId: website.merchantId, name: product_.category.slice(0, 100), slug },
       update: {},
     });
     categoryId = category.id;
   }
 
   const data = {
-    name: product.name,
-    description: product.description,
-    brand: product.brand,
-    priceMinor: product.priceMinor,
-    currency: product.currency,
-    confidence: product.confidence,
+    name: product_.name,
+    description: product_.description,
+    brand: product_.brand,
+    priceMinor: product_.priceMinor,
+    currency: product_.currency,
+    confidence: product_.confidence,
     extractorVersion: EXTRACTOR_VERSION,
     extractedAt: new Date(),
   };
@@ -97,6 +97,36 @@ async function upsertProduct(
     create: { id: newId("prod"), websiteId, merchantId: website.merchantId, sourceUrl, categoryId, ...data },
     update: { ...data, ...(categoryId ? { categoryId } : {}) },
   });
+
+  const product = await db.product.findFirst({
+    where: { websiteId, sourceUrl },
+    select: { id: true },
+  });
+  if (!product) return;
+
+  // find-or-create per variant name; never delete (cartItems FK safety).
+  for (const variant of product_.variants ?? []) {
+    const existing = await db.productVariant.findFirst({
+      where: { productId: product.id, name: variant.name, deletedAt: null },
+    });
+    if (existing) {
+      await db.productVariant.update({
+        where: { id: existing.id },
+        data: { attributes: variant.attributes, available: variant.available, priceMinor: variant.priceMinor },
+      });
+    } else {
+      await db.productVariant.create({
+        data: {
+          id: newId("variant"),
+          productId: product.id,
+          name: variant.name,
+          attributes: variant.attributes,
+          available: variant.available,
+          priceMinor: variant.priceMinor,
+        },
+      });
+    }
+  }
 }
 
 /**
