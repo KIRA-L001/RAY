@@ -5,7 +5,7 @@ config();
 
 import { createWorker, getRedis, QUEUE_NAMES, type CrawlWebsiteJob } from "@ray/jobs";
 import { getDb } from "@ray/database";
-import { assertPublicUrl, newId } from "@ray/types";
+import { assertPublicUrl, newId, ssrfSafeFetch } from "@ray/types";
 import { crawlSite } from "./crawler/crawl";
 import { fetchRobots } from "./crawler/robots";
 
@@ -60,7 +60,7 @@ const crawlWorker = createWorker<CrawlWebsiteJob>(QUEUE_NAMES.crawl, async (job)
     for (let i = 0; i <= MAX_REDIRECTS; i++) {
       // Re-validate every redirect hop against SSRF before following it.
       target = await assertPublicUrl(target.toString());
-      const res = await fetch(target, {
+      const res = await ssrfSafeFetch(target, {
         redirect: "manual",
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         headers: { "user-agent": "RAYBot/0.1 (+onboarding check)" },

@@ -1,4 +1,4 @@
-import { assertPublicUrl } from "@ray/types";
+import { assertPublicUrl, ssrfSafeFetch } from "@ray/types";
 
 const MAX_PAGES = 50;
 const MAX_DEPTH = 3;
@@ -24,7 +24,7 @@ export interface CrawledPage {
 async function fetchPage(url: string): Promise<{ html: string; links: string[] } | null> {
   try {
     const validated = await assertPublicUrl(url);
-    const res = await fetch(validated, {
+    const res = await ssrfSafeFetch(validated, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: { "user-agent": "RAYBot/0.1 (+catalog discovery)" },
     });
