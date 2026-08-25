@@ -4,6 +4,9 @@ import { APP_FILTER } from "@nestjs/core";
 import { LoggerModule } from "nestjs-pino";
 import { GlobalExceptionFilter } from "./common/filters/global-exception.filter";
 import { HealthModule } from "./modules/health/health.module";
+import { AuthModule } from "./modules/auth/auth.module";
+import { MerchantsModule } from "./modules/merchants/merchants.module";
+import { AdminModule } from "./modules/admin/admin.module";
 
 @Module({
   imports: [
@@ -19,6 +22,9 @@ import { HealthModule } from "./modules/health/health.module";
       },
     }),
     HealthModule,
+    AuthModule,
+    MerchantsModule,
+    AdminModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],
 })
