@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { isIP } from "node:net";
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 
 const INTERNAL_HOSTNAMES = /^(localhost$|.*\.(local|internal|intranet|lan|home|corp)$)/i;
 
@@ -87,10 +87,14 @@ const safeAgent = new Agent({
   bodyTimeout: 10_000,
 });
 
-/** fetch() whose TCP connection can only use SSRF-validated addresses. */
-export function ssrfSafeFetch(url: string | URL, init?: RequestInit): Promise<Response> {
-  return assertPublicUrl(url).then(() =>
-    // global fetch honors undici's dispatcher option at runtime
-    fetch(url, { ...init, dispatcher: safeAgent } as unknown as RequestInit),
+/** fetch() whose TCP connection can only use SSRF-validated addresses.
+ * Uses undici's own fetch so the Agent and fetch share one implementation
+ * (Node's bundled fetch rejects newer Agents with 'invalid onRequestStart'). */
+export function ssrfSafeFetch(
+  url: string | URL,
+  init?: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: "manual" },
+): Promise<Response> {
+  return assertPublicUrl(url).then(
+    () => undiciFetch(url, { ...init, dispatcher: safeAgent }) as unknown as Promise<Response>,
   );
 }

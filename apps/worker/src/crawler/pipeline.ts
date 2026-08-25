@@ -1,6 +1,7 @@
 import { getDb } from "@ray/database";
 import { assertPublicUrl, newId, ssrfSafeFetch } from "@ray/types";
 import { crawlSite } from "./crawl";
+import { EXTRACTOR_VERSION, extractProduct, type ExtractedProduct } from "./extract";
 import { fetchRobots } from "./robots";
 
 // Lazy: main.ts must run dotenv before the first getDb(); module-level init would run too early.
@@ -11,6 +12,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 3;
 const MAX_BYTES = 2_000_000;
 const MAX_RETRIES = 5;
+const MAX_EXTRACT_PAGES = 20;
 
 // ponytail: per-process lock only; move to a Redis lock if crawl workers ever scale past one instance
 const inFlight = new Set<string>();
@@ -28,11 +30,64 @@ async function fail(websiteId: string, errorCode: string, errorMessage: string):
   });
 }
 
+/** Fetches candidate pages and upserts extracted products. Returns count. */
+async function extractCandidates(websiteId: string): Promise<number> {
+  const candidates = await database().crawlPage.findMany({
+    where: { websiteId, isCandidate: true },
+    take: MAX_EXTRACT_PAGES,
+    orderBy: { createdAt: "asc" },
+  });
+  let count = 0;
+  for (const page of candidates) {
+    try {
+      const res = await ssrfSafeFetch(page.url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { "user-agent": "RAYBot/0.1 (+product extraction)" },
+      });
+      if (!res.ok) continue;
+      const type = res.headers.get("content-type") ?? "";
+      if (!type.includes("text/html")) continue;
+      const html = (await res.text()).slice(0, MAX_BYTES);
+      const product = extractProduct(html);
+      if (!product) continue;
+      await upsertProduct(websiteId, page.url, product);
+      count++;
+    } catch {
+      // single candidate failing must not abort the batch
+    }
+  }
+  return count;
+}
+
+async function upsertProduct(
+  websiteId: string,
+  sourceUrl: string,
+  product: ExtractedProduct,
+): Promise<void> {
+  const website = await database().website.findUnique({ where: { id: websiteId }, select: { merchantId: true } });
+  if (!website) return;
+  const data = {
+    name: product.name,
+    description: product.description,
+    brand: product.brand,
+    priceMinor: product.priceMinor,
+    currency: product.currency,
+    confidence: product.confidence,
+    extractorVersion: EXTRACTOR_VERSION,
+    extractedAt: new Date(),
+  };
+  await database().product.upsert({
+    where: { websiteId_sourceUrl: { websiteId, sourceUrl } },
+    create: { id: newId("prod"), websiteId, merchantId: website.merchantId, sourceUrl, ...data },
+    update: data,
+  });
+}
+
 /**
  * Onboarding + discovery stage of the crawl pipeline: verify the site is publicly reachable,
  * then run the bounded discovery crawl.
- * ponytail: extraction/normalization/embedding stages land in Task 26; on success we return to
- * PENDING so the extraction stage picks it up.
+ * ponytail: normalization/embedding stages land in Tasks 27/32; on success we return to
+ * PENDING so those stages pick it up.
  */
 export async function processCrawlWebsite(websiteId: string): Promise<void> {
   if (inFlight.has(websiteId)) return;
@@ -127,11 +182,20 @@ export async function processCrawlWebsite(websiteId: string): Promise<void> {
         throw err;
       }
 
-      // Reachable and crawled; extraction stage takes it from PENDING.
+      // Reachable and crawled: extract products from candidate pages.
       await database().website.update({
         where: { id: website.id },
+        data: { status: "EXTRACTING" },
+      });
+      const extracted = await extractCandidates(website.id);
+      await database().website.update({
+        where: { id: website.id },
+        // ponytail: stays PENDING until normalize/embedding stages (Tasks 27/32) move it to READY
         data: { status: "PENDING", errorCode: null, errorMessage: null },
       });
+      if (extracted > 0) {
+        console.log(`[crawl] ${website.hostname}: extracted ${extracted} products`);
+      }
     } catch (err) {
       await fail(
         website.id,

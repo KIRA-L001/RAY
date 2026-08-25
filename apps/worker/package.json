@@ -13,7 +13,8 @@
     "@ray/database": "workspace:^",
     "@ray/jobs": "workspace:*",
     "@ray/types": "workspace:^",
-    "bullmq": "^5.34.0"
+    "bullmq": "^5.34.0",
+    "cheerio": "^1.2.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
