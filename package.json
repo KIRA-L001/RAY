@@ -11,6 +11,8 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "dev:infra": "docker compose up -d --wait",
+    "bootstrap": "pnpm dev:infra && pnpm db:migrate deploy && pnpm db:seed",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
