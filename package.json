@@ -13,6 +13,9 @@
     "test": "turbo run test"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "typescript-eslint": "^8.18.0",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   }
