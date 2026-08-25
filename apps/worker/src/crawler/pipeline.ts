@@ -48,7 +48,7 @@ async function extractCandidates(websiteId: string): Promise<number> {
       const type = res.headers.get("content-type") ?? "";
       if (!type.includes("text/html")) continue;
       const html = (await res.text()).slice(0, MAX_BYTES);
-      const product = extractProduct(html);
+      const product = extractProduct(html, page.url);
       if (!product) continue;
       await upsertProduct(websiteId, page.url, product);
       count++;
@@ -64,8 +64,24 @@ async function upsertProduct(
   sourceUrl: string,
   product: ExtractedProduct,
 ): Promise<void> {
-  const website = await database().website.findUnique({ where: { id: websiteId }, select: { merchantId: true } });
+  const db = database();
+  const website = await db.website.findUnique({ where: { id: websiteId }, select: { merchantId: true } });
   if (!website) return;
+
+  // ponytail: flat category assignment; parentId tree stays unpopulated until a taxonomy need is real
+  let categoryId: string | undefined;
+  if (product.category) {
+    const slug =
+      product.category.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) ||
+      "uncategorized";
+    const category = await db.category.upsert({
+      where: { websiteId_slug: { websiteId, slug } },
+      create: { id: newId("cat"), websiteId, merchantId: website.merchantId, name: product.category.slice(0, 100), slug },
+      update: {},
+    });
+    categoryId = category.id;
+  }
+
   const data = {
     name: product.name,
     description: product.description,
@@ -76,10 +92,10 @@ async function upsertProduct(
     extractorVersion: EXTRACTOR_VERSION,
     extractedAt: new Date(),
   };
-  await database().product.upsert({
+  await db.product.upsert({
     where: { websiteId_sourceUrl: { websiteId, sourceUrl } },
-    create: { id: newId("prod"), websiteId, merchantId: website.merchantId, sourceUrl, ...data },
-    update: data,
+    create: { id: newId("prod"), websiteId, merchantId: website.merchantId, sourceUrl, categoryId, ...data },
+    update: { ...data, ...(categoryId ? { categoryId } : {}) },
   });
 }
 

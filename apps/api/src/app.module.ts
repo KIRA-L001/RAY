@@ -10,6 +10,7 @@ import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { StorefrontModule } from "./modules/storefront/storefront.module";
 import { WebsitesModule } from "./modules/websites/websites.module";
+import { CategoriesModule } from "./modules/categories/categories.module";
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { WebsitesModule } from "./modules/websites/websites.module";
     AdminModule,
     StorefrontModule,
     WebsitesModule,
+    CategoriesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

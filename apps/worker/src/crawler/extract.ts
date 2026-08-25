@@ -4,6 +4,7 @@ export interface ExtractedProduct {
   name: string;
   description?: string;
   brand?: string;
+  category?: string;
   priceMinor: number;
   currency: string;
   confidence: number;
@@ -77,7 +78,26 @@ function fromJsonLd($: cheerio.CheerioAPI): RawProduct | null {
 
 const PRICE_TEXT = /(₹|Rs\.?|\$|€|£)\s?([\d,]+(?:\.\d{1,2})?)/;
 
-export function extractProduct(html: string): ExtractedProduct | null {
+/** Breadcrumb nav if present; falls back to the deepest meaningful URL path segment. */
+function guessCategory($: cheerio.CheerioAPI, sourceUrl: string): string | undefined {
+  const crumbs = $(".breadcrumb li, nav[aria-label*=breadcrumb] li, [class*=breadcrumb] li")
+    .map((_, el) => $(el).text().trim())
+    .get()
+    .filter((t) => t && t.length > 1 && !/^(home|>$)/i.test(t));
+  // last crumb is usually the product itself; category is the one before it
+  const fromBreadcrumb = crumbs.length >= 2 ? crumbs[crumbs.length - 2] : undefined;
+  if (fromBreadcrumb) return fromBreadcrumb.slice(0, 100);
+  try {
+    const segments = new URL(sourceUrl).pathname.split("/").filter(Boolean);
+    // skip generic prefixes like catalogue/c/product
+    const meaningful = segments.filter((s) => !/^(catalogue|category|products?|p|item|index\.html?)$/i.test(s));
+    return meaningful[0]?.replace(/[_-]+/g, " ").slice(0, 100);
+  } catch {
+    return undefined;
+  }
+}
+
+export function extractProduct(html: string, sourceUrl?: string): ExtractedProduct | null {
   const $ = cheerio.load(html);
   let raw = fromJsonLd($);
   let confidence = 0;
@@ -126,6 +146,7 @@ export function extractProduct(html: string): ExtractedProduct | null {
     name: raw.name.slice(0, 300),
     description,
     brand: raw.brand?.slice(0, 100),
+    category: sourceUrl ? guessCategory($, sourceUrl) : undefined,
     priceMinor: raw.priceMinor,
     currency: raw.currency ?? guessCurrencyFromPage($) ?? "INR",
     confidence: Math.round(confidence * 100) / 100,
