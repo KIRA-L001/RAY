@@ -37,6 +37,24 @@ export interface Storefront {
   slug: string;
 }
 
+export type WebsiteStatus =
+  | "PENDING"
+  | "CRAWLING"
+  | "EXTRACTING"
+  | "NORMALIZING"
+  | "EMBEDDING"
+  | "READY"
+  | "FAILED";
+
+export interface WebsiteSummary {
+  id: string;
+  merchantId?: string;
+  url: string;
+  hostname: string;
+  status: WebsiteStatus;
+  errorCode?: string | null;
+}
+
 export interface ApiClientOptions {
   baseUrl: string;
   /** Returns the current access token, or undefined for anonymous calls. */
@@ -109,6 +127,20 @@ export class ApiClient {
     addMember: (merchantId: string, email: string, role: "VIEWER" | "MANAGER" | "ADMIN") =>
       this.request<MemberInfo>("POST", `/v1/merchants/${merchantId}/members`, {
         body: { email, role },
+        auth: true,
+      }),
+  };
+
+  readonly websites = {
+    create: (merchantId: string, url: string) =>
+      this.request<WebsiteSummary>("POST", `/v1/merchants/${merchantId}/websites`, {
+        body: { url },
+        auth: true,
+      }),
+    list: (merchantId: string) =>
+      this.request<WebsiteSummary[]>("GET", `/v1/merchants/${merchantId}/websites`, { auth: true }),
+    get: (merchantId: string, websiteId: string) =>
+      this.request<WebsiteSummary>("GET", `/v1/merchants/${merchantId}/websites/${websiteId}`, {
         auth: true,
       }),
   };

@@ -9,6 +9,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { StorefrontModule } from "./modules/storefront/storefront.module";
+import { WebsitesModule } from "./modules/websites/websites.module";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { StorefrontModule } from "./modules/storefront/storefront.module";
     MerchantsModule,
     AdminModule,
     StorefrontModule,
+    WebsitesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
