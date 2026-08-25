@@ -1,42 +1,31 @@
 import { useState } from "react";
+import { ApiClient, type Session } from "@ray/api-client";
 
-// ponytail: token lives in React state only; page reload = re-login until the Tauri secure-store integration lands
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-
-interface Session {
-  id: string;
-  email: string;
-  adminRole: string | null;
-  memberships: Array<{ merchantId: string; name: string; slug: string; role: string }>;
-}
+// ponytail: token lives in module state only; reload = re-login until the Tauri secure-store integration lands
+let accessToken = "";
+const api = new ApiClient({
+  baseUrl: import.meta.env.VITE_API_URL ?? "http://localhost:4000",
+  getToken: () => accessToken,
+});
 
 export function App() {
-  const [token, setToken] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState("");
 
   async function login(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
-    const form = new FormData(e.currentTarget);
-    const res = await fetch(`${API_URL}/v1/auth/login`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: form.get("email"), password: form.get("password") }),
-    });
-    if (!res.ok) {
+    try {
+      const form = new FormData(e.currentTarget);
+      const result = await api.auth.login(String(form.get("email")), String(form.get("password")));
+      accessToken = result.accessToken;
+      setSession(await api.auth.me());
+    } catch {
       setError("Invalid email or password");
-      return;
     }
-    const data = (await res.json()) as { accessToken: string };
-    setToken(data.accessToken);
-    const meRes = await fetch(`${API_URL}/v1/auth/me`, {
-      headers: { authorization: `Bearer ${data.accessToken}` },
-    });
-    setSession(meRes.ok ? ((await meRes.json()) as Session) : null);
   }
 
-  if (!token) {
+  if (!session) {
     return (
       <main className="mx-auto flex min-h-screen max-w-sm items-center">
         <form onSubmit={login} className="w-full space-y-4">
@@ -55,20 +44,27 @@ export function App() {
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">RAY Desktop</h1>
-          <p className="text-sm opacity-60">{session?.email ?? "…"}</p>
+          <p className="text-sm opacity-60">{session.email}</p>
         </div>
-        <button type="button" onClick={() => { setToken(""); setSession(null); }}>
+        <button
+          type="button"
+          onClick={() => {
+            accessToken = "";
+            setSession(null);
+            void api.auth.logout().catch(() => {});
+          }}
+        >
           Log out
         </button>
       </header>
       <h2 className="mb-2 text-sm font-medium opacity-60">Your merchants</h2>
       <ul className="space-y-1">
-        {(session?.memberships ?? []).map((m) => (
+        {session.memberships.map((m) => (
           <li key={m.merchantId} className="rounded border border-slate-700 px-3 py-2">
             {m.name} <span className="opacity-50">({m.role})</span>
           </li>
         ))}
-        {session && session.memberships.length === 0 ? (
+        {session.memberships.length === 0 ? (
           <li className="opacity-60">No merchants yet — create one via the API.</li>
         ) : null}
       </ul>

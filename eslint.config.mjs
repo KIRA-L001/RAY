@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/.turbo/**",
       "**/src-tauri/**",
       "*.config.mjs",
+      "**/next-env.d.ts",
     ],
   },
   ...tseslint.configs.recommended,

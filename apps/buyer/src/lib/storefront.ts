@@ -13,7 +13,8 @@ export async function getStorefront(slug: string): Promise<Storefront | null> {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return (await res.json()) as Storefront;
+    const body = (await res.json()) as { ok: true; data: Storefront };
+    return body.data;
   } catch {
     return null;
   }

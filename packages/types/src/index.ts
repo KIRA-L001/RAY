@@ -1,4 +1,4 @@
-export * from "./crypto.ts";
+export * from "./crypto.js";
 
 export type Currency = string;
 
