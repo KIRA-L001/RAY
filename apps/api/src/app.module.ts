@@ -7,6 +7,7 @@ import { HealthModule } from "./modules/health/health.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { AdminModule } from "./modules/admin/admin.module";
+import { StorefrontModule } from "./modules/storefront/storefront.module";
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AdminModule } from "./modules/admin/admin.module";
     AuthModule,
     MerchantsModule,
     AdminModule,
+    StorefrontModule,
   ],
   providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],
 })
