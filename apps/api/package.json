@@ -3,20 +3,23 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
-    "dev": "nest start --watch",
-    "start": "node dist/main.js",
+    "build": "tsc --noEmit",
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "echo \"no tests yet\" && exit 0"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@fastify/helmet": "^13.1.1",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-fastify": "^11.0.0",
     "@ray/database": "workspace:*",
+    "@ray/jobs": "workspace:^",
     "@ray/types": "workspace:*",
+    "fastify": "5.11.3",
     "nestjs-pino": "^4.6.1",
     "pino": "^10.3.1",
     "reflect-metadata": "^0.2.2",
@@ -24,8 +27,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@nestjs/cli": "^11.0.0",
     "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

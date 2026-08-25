@@ -1,8 +1,13 @@
 import "reflect-metadata";
+import { config } from "dotenv";
+// pnpm --filter runs from apps/api; the shared .env lives at the repo root
+config({ path: "../../.env" });
+config();
 import { randomUUID } from "node:crypto";
 import { NestFactory } from "@nestjs/core";
 import { FastifyAdapter, type NestFastifyApplication } from "@nestjs/platform-fastify";
 import helmet from "@fastify/helmet";
+import cookie from "@fastify/cookie";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
 
@@ -20,6 +25,7 @@ async function bootstrap(): Promise<void> {
   adapter.getInstance().addHook("onSend", async (req, reply) => {
     reply.header("x-request-id", req.id);
   });
+  await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: false });
 
   const port = Number(process.env.PORT ?? 4000);
@@ -28,3 +34,4 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+
