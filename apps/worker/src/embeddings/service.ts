@@ -1,5 +1,5 @@
 import { getDb } from "@ray/database";
-import { getEmbeddingProvider, type EmbeddingProvider } from "./provider";
+import { getEmbeddingProvider, type EmbeddingProvider } from "@ray/types";
 
 // Lazy: main.ts must run dotenv before the first getDb(); module-level init would run too early.
 let db: ReturnType<typeof getDb>;

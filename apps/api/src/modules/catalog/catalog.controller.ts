@@ -6,6 +6,7 @@ import { z } from "zod";
 import { CatalogService } from "./catalog.service";
 
 const listQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).optional() });
+const searchSchema = z.object({ q: z.string().min(1).max(200) });
 
 @Controller("v1/merchants/:merchantId")
 @UseGuards(JwtAuthGuard, TenantAccessGuard)
@@ -20,6 +21,15 @@ export class CatalogController {
     @Query(new ZodValidationPipe(listQuerySchema)) query: z.infer<typeof listQuerySchema>,
   ) {
     return this.catalog.listProducts(merchantId, query.limit ?? 50);
+  }
+
+  @Get("search")
+  @RequireMerchantRole("VIEWER")
+  search(
+    @Param("merchantId") merchantId: string,
+    @Query(new ZodValidationPipe(searchSchema)) query: z.infer<typeof searchSchema>,
+  ) {
+    return this.catalog.searchProducts(merchantId, query.q);
   }
 
   @Post("websites/:websiteId/recrawl")

@@ -145,6 +145,18 @@ export class ApiClient {
       }),
   };
 
+  readonly catalog = {
+    search: (merchantId: string, query: string) =>
+      this.request<unknown[]>("GET", `/v1/merchants/${merchantId}/search`, {
+        query: { q: query },
+        auth: true,
+      }),
+    recrawl: (merchantId: string, websiteId: string) =>
+      this.request<{ ok: true }>("POST", `/v1/merchants/${merchantId}/websites/${websiteId}/recrawl`, {
+        auth: true,
+      }),
+  };
+
   readonly storefront = {
     get: (slug: string) => this.request<Storefront>("GET", `/v1/storefronts/${encodeURIComponent(slug)}`),
   };

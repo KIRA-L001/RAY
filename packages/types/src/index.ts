@@ -1,5 +1,6 @@
 export * from "./crypto.js";
 export * from "./net.js";
+export * from "./llm.js";
 
 export type Currency = string;
 

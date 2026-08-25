@@ -1,11 +1,52 @@
 import { Injectable } from "@nestjs/common";
 import { enqueueCrawlWebsite } from "@ray/jobs";
 import { getDb } from "@ray/database";
+import { getEmbeddingProvider, type EmbeddingProvider } from "@ray/types";
 import { AppException } from "../../common/errors/app.exception";
 
 @Injectable()
 export class CatalogService {
   private readonly db = getDb();
+  private readonly embeddingProvider: EmbeddingProvider | null = getEmbeddingProvider();
+
+  async searchProducts(merchantId: string, query: string): Promise<unknown> {
+    const trimmed = query.trim().slice(0, 200);
+    if (!trimmed) return [];
+
+    // Semantic path: embed the query and rank by cosine distance.
+    if (this.embeddingProvider) {
+      try {
+        const [vector] = await this.embeddingProvider.embed([trimmed]);
+        if (vector?.length) {
+          const literal = `[${vector.join(",")}]`;
+          return await this.db.$queryRaw`
+            SELECT p.id, p.name, p.brand, p."priceMinor", p.currency, p."sourceUrl",
+                   1 - (e.embedding <=> ${literal}::vector) AS score
+            FROM "Product" p
+            JOIN "ProductEmbedding" e ON e."productId" = p.id
+            WHERE p."merchantId" = ${merchantId}
+              AND p.status = 'ACTIVE' AND p."deletedAt" IS NULL
+              AND e.model = ${this.embeddingProvider.model}
+            ORDER BY e.embedding <=> ${literal}::vector
+            LIMIT 20
+          `;
+        }
+      } catch (err) {
+        console.error("[search] semantic path failed, falling back to ILIKE:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Fallback: plain substring match so search works without an embedding provider.
+    return this.db.$queryRaw`
+      SELECT id, name, brand, "priceMinor", currency, "sourceUrl", 1 AS score
+      FROM "Product"
+      WHERE "merchantId" = ${merchantId}
+        AND status = 'ACTIVE' AND "deletedAt" IS NULL
+        AND ("name" ILIKE ${"%" + trimmed + "%"} OR "description" ILIKE ${"%" + trimmed + "%"})
+      ORDER BY "updatedAt" DESC
+      LIMIT 20
+    `;
+  }
 
   async listProducts(merchantId: string, limit: number) {
     const products = await this.db.product.findMany({
