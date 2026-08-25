@@ -3,6 +3,7 @@ import { Redis } from "ioredis";
 
 export const QUEUE_NAMES = {
   ping: "ping",
+  crawl: "crawl",
 } as const;
 
 let connection: Redis | undefined;
@@ -34,6 +35,14 @@ export interface PingJob {
 
 export async function enqueuePing(message: string): Promise<void> {
   await getQueue(QUEUE_NAMES.ping).add("ping", { message } satisfies PingJob);
+}
+
+export interface CrawlWebsiteJob {
+  websiteId: string;
+}
+
+export async function enqueueCrawlWebsite(websiteId: string): Promise<void> {
+  await getQueue(QUEUE_NAMES.crawl).add("crawl.website", { websiteId } satisfies CrawlWebsiteJob);
 }
 
 /** Type-safe helper for worker apps: new worker with typed job data. */
