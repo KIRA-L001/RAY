@@ -47,9 +47,14 @@ export class CatalogService {
     if (!website) {
       throw new AppException(404, "WEBSITE_NOT_FOUND", "Website not found");
     }
-    if (website.status === "CRAWLING" || website.status === "EXTRACTING") {
+    if (
+      (website.status === "CRAWLING" || website.status === "EXTRACTING" || website.status === "EMBEDDING") &&
+      website.lastAttemptAt &&
+      Date.now() - website.lastAttemptAt.getTime() < 15 * 60_000
+    ) {
       throw new AppException(409, "CRAWL_IN_PROGRESS", "A crawl is already running for this website");
     }
+    // Stale in-progress state (e.g. worker crash) falls through and is reset below.
     await this.db.website.update({
       where: { id: website.id },
       data: { status: "PENDING", errorCode: null, errorMessage: null, retryCount: 0, nextRetryAt: null },

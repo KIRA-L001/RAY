@@ -7,6 +7,7 @@ import { createWorker, enqueueCrawlWebsite, getRedis, QUEUE_NAMES, type CrawlWeb
 import { getDb } from "@ray/database";
 import type { PingJob } from "@ray/jobs";
 import { processCrawlWebsite } from "./crawler/pipeline";
+import { embedWebsiteProducts } from "./embeddings/service";
 
 const db = getDb();
 
@@ -15,6 +16,23 @@ const workers = [
     console.log(`[ping] job=${jobId} processed: ${data.message}`);
   }),
   createWorker<CrawlWebsiteJob>(QUEUE_NAMES.crawl, async (job) => processCrawlWebsite(job.websiteId)),
+  createWorker<CrawlWebsiteJob>(QUEUE_NAMES.embedding, async (job) => {
+    await db.website.update({ where: { id: job.websiteId }, data: { status: "EMBEDDING" } });
+    try {
+      const count = await embedWebsiteProducts(job.websiteId);
+      if (count === null) {
+        // No provider configured: catalog is usable but semantic search is not — keep out of READY.
+        await db.website.update({ where: { id: job.websiteId }, data: { status: "PENDING" } });
+        console.warn(`[embedding] website=${job.websiteId} skipped (no provider), left PENDING`);
+      } else {
+        await db.website.update({ where: { id: job.websiteId }, data: { status: "READY", readyAt: new Date() } });
+        console.log(`[embedding] website=${job.websiteId} embedded ${count} products -> READY`);
+      }
+    } catch (err) {
+      console.error(`[embedding] website=${job.websiteId} failed:`, err instanceof Error ? err.message.slice(0, 200) : err);
+      await db.website.update({ where: { id: job.websiteId }, data: { status: "PENDING" } });
+    }
+  }),
 ];
 
 for (const w of workers) {

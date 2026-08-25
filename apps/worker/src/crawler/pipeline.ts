@@ -1,4 +1,5 @@
 import { getDb } from "@ray/database";
+import { enqueueEmbedding } from "@ray/jobs";
 import { assertPublicUrl, newId, ssrfSafeFetch } from "@ray/types";
 import { crawlSite } from "./crawl";
 import { EXTRACTOR_VERSION, extractProduct, type ExtractedProduct } from "./extract";
@@ -251,20 +252,22 @@ export async function processCrawlWebsite(websiteId: string): Promise<void> {
         throw err;
       }
 
-      // Reachable and crawled: extract products from candidate pages.
+      // Reachable and crawled: extract products, then hand off to the embedding worker.
       await database().website.update({
         where: { id: website.id },
         data: { status: "EXTRACTING" },
       });
       const extracted = await extractCandidates(website.id);
-      await database().website.update({
-        where: { id: website.id },
-        // ponytail: stays PENDING until normalize/embedding stages (Tasks 27/32) move it to READY
-        data: { status: "PENDING", errorCode: null, errorMessage: null },
-      });
       if (extracted > 0) {
         console.log(`[crawl] ${website.hostname}: extracted ${extracted} products`);
       }
+      await enqueueEmbedding(website.id).catch((err) =>
+        console.error(`[crawl] embedding enqueue failed for ${website.id}:`, err.message),
+      );
+      await database().website.update({
+        where: { id: website.id },
+        data: { status: "PENDING", errorCode: null, errorMessage: null },
+      });
     } catch (err) {
       await fail(
         website.id,
