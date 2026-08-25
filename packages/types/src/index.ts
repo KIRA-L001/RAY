@@ -1,4 +1,5 @@
 export * from "./crypto.js";
+export * from "./net.js";
 
 export type Currency = string;
 

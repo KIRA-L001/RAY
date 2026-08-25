@@ -1,11 +1,13 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { getDb } from "@ray/database";
+import { enqueueCrawlWebsite } from "@ray/jobs";
 import { newId } from "@ray/types";
 import { AppException } from "../../common/errors/app.exception";
 
 @Injectable()
 export class WebsitesService {
   private readonly db = getDb();
+  private readonly logger = new Logger(WebsitesService.name);
 
   async create(merchantId: string, rawUrl: string) {
     let parsed: URL;
@@ -27,6 +29,14 @@ export class WebsitesService {
     const website = await this.db.website.create({
       data: { id: newId("site"), merchantId, url: parsed.toString(), hostname },
     });
+
+    try {
+      await enqueueCrawlWebsite(website.id);
+    } catch (err) {
+      // Onboarding continues even if the queue is briefly down; retrigger manually until a reconciler exists.
+      this.logger.error({ err, websiteId: website.id }, "failed to enqueue crawl.website");
+    }
+
     return {
       id: website.id,
       merchantId: website.merchantId,

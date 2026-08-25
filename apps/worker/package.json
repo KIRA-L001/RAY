@@ -10,7 +10,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@ray/database": "workspace:^",
     "@ray/jobs": "workspace:*",
+    "@ray/types": "workspace:^",
     "bullmq": "^5.34.0"
   },
   "devDependencies": {

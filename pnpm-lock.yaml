@@ -190,9 +190,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ray/database':
+        specifier: workspace:^
+        version: link:../../packages/database
       '@ray/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs
+      '@ray/types':
+        specifier: workspace:^
+        version: link:../../packages/types
       bullmq:
         specifier: ^5.34.0
         version: 5.81.3
