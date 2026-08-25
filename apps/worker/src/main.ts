@@ -5,7 +5,9 @@ config();
 
 import { createWorker, getRedis, QUEUE_NAMES, type CrawlWebsiteJob } from "@ray/jobs";
 import { getDb } from "@ray/database";
-import { assertPublicUrl } from "@ray/types";
+import { assertPublicUrl, newId } from "@ray/types";
+import { crawlSite } from "./crawler/crawl";
+import { fetchRobots } from "./crawler/robots";
 
 const db = getDb();
 
@@ -76,7 +78,53 @@ const crawlWorker = createWorker<CrawlWebsiteJob>(QUEUE_NAMES.crawl, async (job)
       if (buffer.byteLength > MAX_BYTES) throw new Error("homepage too large");
       break;
     }
-    // Reachable and sane: hand back to the pipeline entrance for the real crawler.
+
+    // Onboarding passed: run the discovery crawl.
+    const robots = await fetchRobots(url.origin);
+    const crawlJob = await db.crawlJob.create({
+      data: {
+        id: `cj_${crypto.randomUUID()}`,
+        merchantId: website.merchantId,
+        websiteId: website.id,
+        status: "RUNNING",
+        idempotencyKey: `crawl:${website.id}:${website.retryCount}:${Date.now()}`,
+        startedAt: new Date(),
+      },
+    });
+
+    let pagesCrawled = 0;
+    try {
+      pagesCrawled = await crawlSite(website.url, robots.isAllowed, async (page) => {
+        await db.crawlPage.upsert({
+          where: { websiteId_url: { websiteId: website.id, url: page.url } },
+          create: {
+            id: newId("crawlpage"),
+            websiteId: website.id,
+            url: page.url,
+            isCandidate: page.isCandidate,
+            httpStatus: 200,
+            fetchedAt: new Date(),
+          },
+          update: { isCandidate: page.isCandidate, httpStatus: 200, fetchedAt: new Date() },
+        });
+      });
+      await db.crawlJob.update({
+        where: { id: crawlJob.id },
+        data: { status: "DONE", pagesCrawled, finishedAt: new Date() },
+      });
+    } catch (err) {
+      await db.crawlJob.update({
+        where: { id: crawlJob.id },
+        data: {
+          status: "FAILED",
+          error: { message: err instanceof Error ? err.message.slice(0, 200) : "crawl failed" },
+          finishedAt: new Date(),
+        },
+      });
+      throw err;
+    }
+
+    // Reachable and crawled; extraction stage (Task 26) takes it from PENDING.
     await db.website.update({
       where: { id: website.id },
       data: { status: "PENDING", errorCode: null, errorMessage: null },

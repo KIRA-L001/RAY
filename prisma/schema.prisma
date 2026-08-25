@@ -119,6 +119,7 @@ model Website {
   sessions   Session[]
   events     Event[]
   crawlJobs  CrawlJob[]
+  crawlPages CrawlPage[]
 
   @@index([merchantId])
 }
@@ -140,6 +141,21 @@ model CrawlJob {
   website Website @relation(fields: [websiteId], references: [id])
 
   @@index([merchantId, status])
+}
+
+model CrawlPage {
+  id          String    @id
+  websiteId   String
+  url         String
+  isCandidate Boolean   @default(false)
+  httpStatus  Int?
+  fetchedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  website Website @relation(fields: [websiteId], references: [id])
+
+  @@unique([websiteId, url])
+  @@index([websiteId, isCandidate])
 }
 
 model Category {
