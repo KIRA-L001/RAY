@@ -38,6 +38,7 @@ async function extractCandidates(websiteId: string): Promise<number> {
     orderBy: { createdAt: "asc" },
   });
   let count = 0;
+  const seenSourceUrls = new Set<string>();
   for (const page of candidates) {
     try {
       const res = await ssrfSafeFetch(page.url, {
@@ -51,11 +52,19 @@ async function extractCandidates(websiteId: string): Promise<number> {
       const product = extractProduct(html, page.url);
       if (!product) continue;
       await upsertProduct(websiteId, page.url, product);
+      seenSourceUrls.add(page.url);
       count++;
     } catch {
       // single candidate failing must not abort the batch
     }
   }
+
+  // Reconcile: anything not seen in this run leaves the active catalog.
+  await database().product.updateMany({
+    where: { websiteId, deletedAt: null, status: "ACTIVE", sourceUrl: { notIn: [...seenSourceUrls] } },
+    data: { status: "INACTIVE" },
+  });
+
   return count;
 }
 
