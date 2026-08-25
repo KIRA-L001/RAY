@@ -16,6 +16,7 @@ export interface ExtractedProduct {
   currency: string;
   confidence: number;
   variants: ExtractedVariant[];
+  images: Array<{ url: string; alt?: string }>;
 }
 
 const SYMBOL_CURRENCY: Record<string, string> = {
@@ -213,6 +214,47 @@ export function extractProduct(html: string, sourceUrl?: string): ExtractedProdu
     }
   }
 
+  /** Product images: JSON-LD image, og:image, then <img> tags; skip icons/data-URIs, cap 6. */
+  const images: Array<{ url: string; alt?: string }> = [];
+  const seenImages = new Set<string>();
+  const addImage = (raw: string | undefined, alt?: string): void => {
+    if (!raw || images.length >= 6) return;
+    try {
+      const abs = new URL(raw, sourceUrl).toString();
+      if (abs.startsWith("data:") || /\.svg(\?|$)/i.test(abs) || seenImages.has(abs)) return;
+      seenImages.add(abs);
+      images.push({ url: abs, ...(alt ? { alt: alt.slice(0, 200) } : {}) });
+    } catch {
+      // unparseable url: skip
+    }
+  };
+  for (const el of $('script[type="application/ld+json"]').toArray()) {
+    try {
+      const parsed: unknown = JSON.parse($(el).text());
+      for (const node of Array.isArray(parsed) ? parsed : [parsed]) {
+        if (typeof node !== "object" || node === null) continue;
+        const img = (node as { image?: unknown }).image;
+        for (const candidate of Array.isArray(img) ? img : [img]) {
+          if (typeof candidate === "string") addImage(candidate);
+          else if (typeof candidate === "object" && candidate !== null && "url" in candidate)
+            addImage(String((candidate as { url?: unknown }).url));
+        }
+      }
+    } catch {
+      // malformed ld+json
+    }
+  }
+  addImage($('meta[property="og:image"]').attr("content"));
+  if (images.length < 6 && sourceUrl) {
+    for (const el of $("img").toArray()) {
+      const src = $(el).attr("src") ?? $(el).attr("data-src");
+      const width = Number.parseInt($(el).attr("width") ?? "0", 10);
+      if (width && width < 100) continue;
+      addImage(src, $(el).attr("alt"));
+      if (images.length >= 6) break;
+    }
+  }
+
   return {
     name: raw.name.slice(0, 300),
     description,
@@ -226,6 +268,7 @@ export function extractProduct(html: string, sourceUrl?: string): ExtractedProdu
       variants.length > 0
         ? variants
         : [{ name: "Default", attributes: {}, available: true, priceMinor: raw.priceMinor }],
+    images,
   };
 
   function guessCurrencyFromPage(page: cheerio.CheerioAPI): string | undefined {

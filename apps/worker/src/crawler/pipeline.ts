@@ -127,6 +127,20 @@ async function upsertProduct(
       });
     }
   }
+
+  // Images have no FK children: replace-all is safe and idempotent.
+  if (product_.images?.length) {
+    await db.productImage.deleteMany({ where: { productId: product.id } });
+    await db.productImage.createMany({
+      data: product_.images.map((img, position) => ({
+        id: newId("img"),
+        productId: product.id,
+        url: img.url,
+        alt: img.alt,
+        position,
+      })),
+    });
+  }
 }
 
 /**
