@@ -1,0 +1,941 @@
+You are the lead software architect and senior full-stack/backend engineer responsible for building RAY.
+
+IMPORTANT:
+A complete project specification already exists in:
+
+RAY_BACKEND_ARCHITECTURE_AND_CODING_AGENT.md
+
+That document is the source of truth for architecture, security, technology choices, data model, integrations, and implementation phases.
+
+Your job is NOT to implement everything at once.
+
+You must build RAY ONE TASK AT A TIME.
+
+==================================================
+PRODUCT CONTEXT
+==================================================
+
+RAY has three integrated applications:
+
+1. RAY ADMIN
+   Operational/admin control panel for the RAY owner.
+
+2. RAY MERCHANT DESKTOP
+   Desktop control center where merchants manage websites, products, customers, AI agents, integrations, analytics, etc.
+
+3. RAY AI BUYER
+   Customer-facing AI shopping interface where users can discover products, interact with the AI, create carts and complete payments.
+
+All three applications communicate with:
+
+                    RAY CLOUD
+                SOURCE OF TRUTH
+
+The architecture also contains:
+
+- RAY SDK
+- AI Agent Runtime
+- MCP
+- Razorpay
+- PostgreSQL
+- Redis
+- Background workers
+- Object storage
+- LLM provider abstraction
+
+The final system must be a real working integrated system, not a collection of mocked screens.
+
+==================================================
+PRIMARY RULE
+==================================================
+
+WORK SEQUENTIALLY.
+
+Never implement multiple major phases simultaneously.
+
+Never skip validation.
+
+Never say something is "working" unless you actually tested it.
+
+Never replace a required real integration with fake/hardcoded logic unless the architecture document explicitly allows a local development mock.
+
+When a task is complete:
+
+1. Run the appropriate tests.
+2. Run typecheck.
+3. Run lint.
+4. Verify the application actually starts.
+5. Verify database migrations if applicable.
+6. Inspect the resulting code.
+7. Report exactly what was completed.
+8. Report any known problems.
+9. STOP.
+
+Do not automatically continue to the next task.
+
+Wait for my command:
+
+NEXT
+
+before starting the next task.
+
+==================================================
+SOURCE OF TRUTH
+==================================================
+
+Before modifying the project:
+
+1. Read RAY_BACKEND_ARCHITECTURE_AND_CODING_AGENT.md completely.
+2. Inspect the existing repository.
+3. Understand what already exists.
+4. Do not destroy working code.
+5. Do not create duplicate architecture.
+6. Do not introduce technologies that contradict the specification without explaining why.
+
+If the repository already contains an implementation, adapt it rather than blindly recreating it.
+
+==================================================
+ENGINEERING PRINCIPLES
+==================================================
+
+Use:
+
+- TypeScript strict mode
+- pnpm
+- Turborepo
+- Next.js
+- NestJS
+- Fastify
+- PostgreSQL
+- Prisma
+- Redis
+- BullMQ
+- Tauri 2
+- React
+- Tailwind
+- shadcn/ui
+- pgvector
+- OpenTelemetry where appropriate
+
+Use a MODULAR MONOLITH + WORKERS architecture.
+
+Do NOT create unnecessary microservices.
+
+Keep clear domain boundaries.
+
+Use dependency injection.
+
+Keep controllers thin.
+
+Put business logic in services/use-cases.
+
+Put persistence behind repositories/services where appropriate.
+
+External systems must use adapters/interfaces.
+
+Examples:
+
+PaymentProvider
+    └── RazorpayProvider
+
+LLMProvider
+    ├── OpenAIProvider
+    ├── AnthropicProvider
+    └── GeminiProvider
+
+NotificationProvider
+    └── WhatsAppProvider
+
+==================================================
+SECURITY IS NOT OPTIONAL
+==================================================
+
+Every feature must consider:
+
+- authentication
+- authorization
+- tenant isolation
+- input validation
+- rate limiting
+- secret handling
+- PII protection
+- audit logging
+- idempotency
+- SSRF
+- prompt injection
+- webhook verification
+- CSRF where applicable
+- secure cookies
+- CORS
+- security headers
+
+Never trust:
+
+- client-provided merchant_id
+- client-provided payment status
+- LLM output
+- merchant website content
+- browser events
+- external webhook payloads
+
+All sensitive operations must be validated server-side.
+
+==================================================
+MULTI-TENANCY
+==================================================
+
+RAY is multi-tenant.
+
+Merchant A must NEVER be able to access:
+
+- Merchant B's products
+- Merchant B's customers
+- Merchant B's orders
+- Merchant B's conversations
+- Merchant B's events
+- Merchant B's integrations
+- Merchant B's payments
+
+Never rely on frontend filtering for tenant isolation.
+
+Tenant authorization must happen in the backend.
+
+==================================================
+PAYMENTS
+==================================================
+
+Razorpay is the payment authority.
+
+Never mark an order as paid because:
+
+- frontend says payment succeeded
+- AI says payment succeeded
+- browser callback says payment succeeded
+
+Payment state must be verified server-side.
+
+Razorpay webhooks must:
+
+1. receive raw body
+2. verify signature
+3. deduplicate
+4. persist event
+5. acknowledge quickly
+6. process asynchronously
+7. update payment/order state safely
+
+==================================================
+AI
+==================================================
+
+LLMs are NOT trusted systems.
+
+LLMs can request tools but cannot directly perform privileged operations.
+
+Architecture:
+
+LLM
+ ↓
+Tool Request
+ ↓
+Validation
+ ↓
+Authorization
+ ↓
+Policy Engine
+ ↓
+Domain Service
+ ↓
+Database/external integration
+
+Never allow an LLM to bypass business rules.
+
+Never put secrets into prompts.
+
+Never expose unnecessary PII to LLMs.
+
+Merchant website content and customer messages are UNTRUSTED DATA.
+
+==================================================
+MCP
+==================================================
+
+MCP must use the same underlying domain services as REST/API.
+
+Do NOT duplicate business logic inside MCP.
+
+MCP tools must be:
+
+- authenticated
+- tenant-aware
+- validated
+- authorized
+- rate limited
+- audited
+- timeout protected
+
+==================================================
+DATABASE
+==================================================
+
+PostgreSQL is the source of truth.
+
+Do not use:
+
+- frontend state
+- Redis
+- vector database
+- desktop local storage
+
+as the authoritative business database.
+
+Use PostgreSQL for transactional state.
+
+Use Redis for caching/queues.
+
+Use pgvector for semantic search.
+
+==================================================
+NO FAKE CORE LOGIC
+==================================================
+
+Do NOT create fake hardcoded logic such as:
+
+products = [
+  { name: "Nike Shoe", price: 4999 }
+]
+
+for production application flows.
+
+Use the actual database.
+
+Seed data may be created for development/testing, but it must enter through the real data model.
+
+==================================================
+TASK MANAGEMENT SYSTEM
+==================================================
+
+You will follow the following sequence.
+
+------------------------------------------
+PHASE 1 — FOUNDATION
+------------------------------------------
+
+TASK 1
+Repository audit + architecture initialization
+
+TASK 2
+Monorepo + workspace configuration
+
+TASK 3
+Shared TypeScript/config packages
+
+TASK 4
+PostgreSQL + Prisma initialization
+
+TASK 5
+Initial database schema
+
+TASK 6
+Database migrations + seed system
+
+TASK 7
+NestJS + Fastify API foundation
+
+TASK 8
+Global validation/error handling/logging
+
+TASK 9
+Authentication foundation
+
+TASK 10
+User + Merchant + Membership system
+
+TASK 11
+Tenant authorization
+
+TASK 12
+Admin authorization foundation
+
+TASK 13
+Redis + BullMQ infrastructure
+
+TASK 14
+Health/readiness endpoints
+
+TASK 15
+Admin application foundation
+
+TASK 16
+Merchant desktop/Tauri foundation
+
+TASK 17
+AI Buyer application foundation
+
+TASK 18
+Shared API client/types
+
+TASK 19
+Local Docker development environment
+
+TASK 20
+CI checks
+
+------------------------------------------
+PHASE 2 — MERCHANT WEBSITE + CATALOG
+------------------------------------------
+
+TASK 21
+Website entity/API
+
+TASK 22
+Website onboarding
+
+TASK 23
+Crawler architecture
+
+TASK 24
+SSRF protection
+
+TASK 25
+Crawler worker
+
+TASK 26
+HTML extraction
+
+TASK 27
+Product normalization
+
+TASK 28
+Categories
+
+TASK 29
+Product variants
+
+TASK 30
+Product images
+
+TASK 31
+Catalog synchronization
+
+TASK 32
+Embeddings
+
+TASK 33
+Semantic product search
+
+------------------------------------------
+PHASE 3 — SDK + EVENTS
+------------------------------------------
+
+TASK 34
+SDK package
+
+TASK 35
+SDK authentication/site identity
+
+TASK 36
+Session tracking
+
+TASK 37
+Event schema
+
+TASK 38
+Event ingestion API
+
+TASK 39
+Event idempotency
+
+TASK 40
+Customer identification
+
+TASK 41
+Analytics aggregation
+
+------------------------------------------
+PHASE 4 — AI BUYER
+------------------------------------------
+
+TASK 42
+Conversation model
+
+TASK 43
+Streaming chat API
+
+TASK 44
+LLM provider abstraction
+
+TASK 45
+Shopping agent
+
+TASK 46
+Product search tool
+
+TASK 47
+Product recommendation
+
+TASK 48
+Product details
+
+TASK 49
+Cart creation
+
+TASK 50
+Cart updates
+
+TASK 51
+Customer identity flow
+
+------------------------------------------
+PHASE 5 — RAZORPAY
+------------------------------------------
+
+TASK 52
+Razorpay adapter
+
+TASK 53
+Razorpay Test Mode configuration
+
+TASK 54
+RAY order model
+
+TASK 55
+Razorpay order creation
+
+TASK 56
+Checkout flow
+
+TASK 57
+Payment verification
+
+TASK 58
+Webhook endpoint
+
+TASK 59
+Webhook signature validation
+
+TASK 60
+Webhook idempotency
+
+TASK 61
+Payment state machine
+
+TASK 62
+End-to-end payment test
+
+------------------------------------------
+PHASE 6 — MERCHANT INTELLIGENCE
+------------------------------------------
+
+TASK 63
+Merchant dashboard API
+
+TASK 64
+AI revenue calculation
+
+TASK 65
+Orders analytics
+
+TASK 66
+Customer analytics
+
+TASK 67
+Conversation analytics
+
+TASK 68
+Product trends
+
+TASK 69
+Conversion analytics
+
+TASK 70
+Growth opportunities
+
+------------------------------------------
+PHASE 7 — AGENTS
+------------------------------------------
+
+TASK 71
+Agent runtime foundation
+
+TASK 72
+Tool framework
+
+TASK 73
+Policy engine
+
+TASK 74
+Shopping Agent hardening
+
+TASK 75
+Growth Agent
+
+TASK 76
+Recovery Agent
+
+TASK 77
+Insights Agent
+
+TASK 78
+Agent execution logs
+
+TASK 79
+Agent failure handling
+
+------------------------------------------
+PHASE 8 — MCP
+------------------------------------------
+
+TASK 80
+MCP server foundation
+
+TASK 81
+MCP authentication
+
+TASK 82
+MCP tenant context
+
+TASK 83
+search_products
+
+TASK 84
+get_product
+
+TASK 85
+check_inventory
+
+TASK 86
+get_price
+
+TASK 87
+get_merchant_policy
+
+TASK 88
+create_cart
+
+TASK 89
+get_cart
+
+TASK 90
+update_cart
+
+TASK 91
+create_checkout
+
+TASK 92
+get_order_status
+
+TASK 93
+MCP security tests
+
+------------------------------------------
+PHASE 9 — RECOVERY + WHATSAPP
+------------------------------------------
+
+TASK 94
+Recovery opportunity detection
+
+TASK 95
+Consent model
+
+TASK 96
+Notification abstraction
+
+TASK 97
+WhatsApp integration
+
+TASK 98
+Cart recovery agent
+
+TASK 99
+Recovery analytics
+
+------------------------------------------
+PHASE 10 — ADMIN + OBSERVABILITY
+------------------------------------------
+
+TASK 100
+Admin merchant explorer
+
+TASK 101
+Admin website explorer
+
+TASK 102
+Admin product explorer
+
+TASK 103
+Admin customer explorer
+
+TASK 104
+Admin event explorer
+
+TASK 105
+Admin conversation explorer
+
+TASK 106
+Admin agent explorer
+
+TASK 107
+Admin order/payment explorer
+
+TASK 108
+Admin webhook explorer
+
+TASK 109
+Admin MCP explorer
+
+TASK 110
+Audit log explorer
+
+TASK 111
+System health dashboard
+
+------------------------------------------
+PHASE 11 — HARDENING
+------------------------------------------
+
+TASK 112
+Tenant isolation test suite
+
+TASK 113
+Authentication security tests
+
+TASK 114
+Authorization security tests
+
+TASK 115
+SSRF security tests
+
+TASK 116
+Prompt injection tests
+
+TASK 117
+Webhook replay tests
+
+TASK 118
+Idempotency tests
+
+TASK 119
+Rate-limit tests
+
+TASK 120
+PII/log redaction audit
+
+TASK 121
+Dependency/security audit
+
+TASK 122
+End-to-end golden path
+
+TASK 123
+Production deployment preparation
+
+==================================================
+HOW TO EXECUTE EACH TASK
+==================================================
+
+For every TASK:
+
+STEP A — Understand
+
+Explain briefly:
+
+- what the task does
+- why it exists
+- which files will change
+- dependencies
+- security considerations
+
+Do NOT write code yet.
+
+STEP B — Implement
+
+Implement only that task.
+
+Do not silently implement future tasks.
+
+Small supporting changes are allowed when absolutely necessary.
+
+If a dependency from a future task is required, create only the minimum interface/stub necessary.
+
+STEP C — Validate
+
+Run:
+
+- tests
+- typecheck
+- lint
+- build where applicable
+- migration checks where applicable
+
+Actually execute them.
+
+STEP D — Inspect
+
+Check:
+
+- tenant isolation
+- security
+- error handling
+- types
+- duplicated logic
+- secrets
+- logging
+- maintainability
+
+STEP E — Report
+
+Return:
+
+TASK:
+STATUS:
+
+IMPLEMENTED:
+- ...
+
+FILES CREATED:
+- ...
+
+FILES MODIFIED:
+- ...
+
+DATABASE CHANGES:
+- ...
+
+API CHANGES:
+- ...
+
+SECURITY:
+- ...
+
+TESTS:
+- ...
+
+COMMANDS RUN:
+- ...
+
+RESULTS:
+- ...
+
+KNOWN ISSUES:
+- ...
+
+NEXT TASK:
+TASK X
+
+Then STOP.
+
+==================================================
+WHEN SOMETHING FAILS
+==================================================
+
+Do not hide errors.
+
+If tests fail:
+
+1. Identify the root cause.
+2. Fix it if it belongs to the current task.
+3. Re-run the failing test.
+4. Re-run the complete relevant validation.
+5. Report the failure and fix.
+
+If the problem belongs to a future task:
+
+- do not implement the future task
+- create the smallest safe interface required
+- document it
+
+==================================================
+WHEN REQUIREMENTS ARE AMBIGUOUS
+==================================================
+
+Do not make major architectural assumptions silently.
+
+If the ambiguity affects:
+
+- security
+- payments
+- tenant isolation
+- data model
+- external integrations
+- authentication
+- AI authorization
+
+STOP and ask me.
+
+For small implementation details, use the architecture document and standard engineering practice.
+
+==================================================
+GIT / CHANGE CONTROL
+==================================================
+
+Keep changes logically isolated.
+
+After each task, provide a suggested commit message:
+
+feat(scope): short description
+
+Examples:
+
+feat(auth): add merchant authentication foundation
+
+feat(catalog): add product normalization pipeline
+
+feat(payments): add Razorpay webhook verification
+
+Do not make destructive git operations.
+
+Do not reset or delete unrelated work.
+
+==================================================
+DEFINITION OF DONE
+==================================================
+
+A task is DONE only if:
+
+- implementation exists
+- code compiles
+- tests pass
+- relevant lint passes
+- database changes migrate correctly
+- security requirements are addressed
+- no known regression exists
+- result is documented
+
+"Code written" does NOT mean "task complete."
+
+==================================================
+FIRST ACTION
+==================================================
+
+START WITH TASK 1 ONLY.
+
+TASK 1:
+Repository audit + architecture initialization.
+
+Your first response/action should:
+
+1. Read RAY_BACKEND_ARCHITECTURE_AND_CODING_AGENT.md.
+2. Inspect the entire current repository structure.
+3. Determine what already exists.
+4. Identify conflicts with the architecture.
+5. Identify existing technologies.
+6. Identify existing applications/packages.
+7. Identify missing foundational pieces.
+8. DO NOT implement Phase 2+.
+9. DO NOT build the crawler.
+10. DO NOT build AI agents.
+11. DO NOT build Razorpay.
+12. DO NOT build MCP.
+13. DO NOT build WhatsApp.
+14. Do not redesign the architecture without reason.
+
+Then provide the Task 1 audit report.
+
+STOP AFTER TASK 1.
+
+I will explicitly send:
+
+NEXT
+
+when you are allowed to proceed to Task 2.

@@ -1,14 +1,785 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
-  runtime  = "nodejs"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  runtime         = "nodejs"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// ─── Tenancy ────────────────────────────────────────────────────────────────
+
+enum AdminRole {
+  SUPER_ADMIN
+  OPERATIONS
+  SUPPORT
+  READ_ONLY
+}
+
+enum MerchantRole {
+  OWNER
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+model User {
+  id           String     @id
+  email        String     @unique
+  passwordHash String
+  adminRole    AdminRole?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]     @relation("AuditLogActor")
+}
+
+model Merchant {
+  id        String    @id
+  name      String
+  slug      String    @unique
+  status    String    @default("ACTIVE")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  memberships          Membership[]
+  websites             Website[]
+  customers            Customer[]
+  sessions             Session[]
+  events               Event[]
+  conversations        Conversation[]
+  carts                Cart[]
+  orders               Order[]
+  payments             Payment[]
+  agentsRuns           AgentRun[]
+  integrations         Integration[]
+  llmProviders         LlmProviderConfig[]
+  notificationChannels NotificationChannel[]
+  mcpServers           McpServer[]
+  mcpToolCalls         McpToolCall[]
+  notifications        Notification[]
+  growthOpportunities  GrowthOpportunity[]
+  analyticsDaily       AnalyticsDaily[]
+  auditLogs            AuditLog[]
+  apiKeys              ApiKey[]
+}
+
+model Membership {
+  id         String       @id
+  userId     String
+  merchantId String
+  role       MerchantRole @default(VIEWER)
+  createdAt  DateTime     @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([userId, merchantId])
+}
+
+// ─── Websites + catalog ─────────────────────────────────────────────────────
+
+enum WebsiteStatus {
+  PENDING
+  CRAWLING
+  EXTRACTING
+  NORMALIZING
+  EMBEDDING
+  READY
+  FAILED
+}
+
+model Website {
+  id            String        @id
+  merchantId    String
+  url           String
+  hostname      String
+  status        WebsiteStatus @default(PENDING)
+  errorCode     String?
+  errorMessage  String?
+  retryCount    Int           @default(0)
+  lastAttemptAt DateTime?
+  nextRetryAt   DateTime?
+  readyAt       DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  merchant   Merchant   @relation(fields: [merchantId], references: [id])
+  products   Product[]
+  categories Category[]
+  sessions   Session[]
+  events     Event[]
+  crawlJobs  CrawlJob[]
+
+  @@index([merchantId])
+}
+
+model CrawlJob {
+  id             String    @id
+  merchantId     String
+  websiteId      String
+  status         String    @default("PENDING")
+  attempt        Int       @default(0)
+  maxAttempts    Int       @default(3)
+  pagesCrawled   Int       @default(0)
+  error          Json?
+  idempotencyKey String    @unique
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  website Website @relation(fields: [websiteId], references: [id])
+
+  @@index([merchantId, status])
+}
+
+model Category {
+  id         String    @id
+  merchantId String
+  websiteId  String
+  parentId   String?
+  name       String
+  slug       String
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  website  Website    @relation(fields: [websiteId], references: [id])
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([websiteId, slug])
+  @@index([merchantId])
+}
+
+model Product {
+  id               String    @id
+  merchantId       String
+  websiteId        String
+  categoryId       String?
+  externalId       String?
+  name             String
+  description      String?
+  brand            String?
+  priceMinor       Int
+  currency         String
+  sourceUrl        String
+  status           String    @default("ACTIVE")
+  confidence       Float?
+  extractorVersion String?
+  extractedAt      DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  website    Website           @relation(fields: [websiteId], references: [id])
+  category   Category?         @relation(fields: [categoryId], references: [id])
+  variants   ProductVariant[]
+  images     ProductImage[]
+  embedding  ProductEmbedding?
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([websiteId, sourceUrl])
+  @@index([merchantId, status])
+}
+
+model ProductVariant {
+  id         String    @id
+  productId  String
+  name       String
+  attributes Json
+  available  Boolean   @default(true)
+  priceMinor Int?
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  product    Product     @relation(fields: [productId], references: [id])
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([productId])
+}
+
+model ProductImage {
+  id        String  @id
+  productId String
+  url       String
+  alt       String?
+  position  Int     @default(0)
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+model ProductEmbedding {
+  productId  String                       @id
+  merchantId String
+  model      String
+  embedding  Unsupported("vector(1536)")?
+  updatedAt  DateTime                     @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([merchantId])
+}
+
+// ─── Customers / sessions / events ──────────────────────────────────────────
+
+model Customer {
+  id         String    @id
+  merchantId String
+  email      String?
+  phone      String?
+  name       String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  merchant      Merchant           @relation(fields: [merchantId], references: [id])
+  identities    CustomerIdentity[]
+  sessions      Session[]
+  conversations Conversation[]
+  carts         Cart[]
+  orders        Order[]
+  payments      Payment[]
+  notifications Notification[]
+
+  @@index([merchantId])
+  @@index([merchantId, email])
+  @@index([merchantId, phone])
+}
+
+enum IdentityType {
+  EMAIL
+  PHONE
+  EXTERNAL
+}
+
+model CustomerIdentity {
+  id         String       @id
+  merchantId String
+  customerId String
+  type       IdentityType
+  value      String
+  source     String
+  verifiedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([merchantId, type, value])
+}
+
+model Session {
+  id          String   @id
+  merchantId  String
+  websiteId   String?
+  anonymousId String?
+  customerId  String?
+  userAgent   String?
+  ipHash      String?
+  startedAt   DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  merchant      Merchant       @relation(fields: [merchantId], references: [id])
+  website       Website?       @relation(fields: [websiteId], references: [id])
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  events        Event[]
+  conversations Conversation[]
+  carts         Cart[]
+
+  @@index([merchantId, anonymousId])
+  @@index([merchantId, customerId])
+}
+
+model Event {
+  id            String   @id
+  eventId       String
+  merchantId    String
+  websiteId     String?
+  sessionId     String?
+  customerId    String?
+  anonymousId   String?
+  eventType     String
+  source        String
+  schemaVersion Int      @default(1)
+  data          Json
+  occurredAt    DateTime
+  ingestedAt    DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  website  Website? @relation(fields: [websiteId], references: [id])
+  session  Session? @relation(fields: [sessionId], references: [id])
+
+  @@unique([merchantId, eventId])
+  @@index([merchantId, eventType, occurredAt])
+}
+
+// ─── Conversations / agents ────────────────────────────────────────────────
+
+model Conversation {
+  id         String   @id
+  merchantId String
+  customerId String?
+  sessionId  String?
+  channel    String   @default("WEB")
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  merchant  Merchant              @relation(fields: [merchantId], references: [id])
+  customer  Customer?             @relation(fields: [customerId], references: [id])
+  session   Session?              @relation(fields: [sessionId], references: [id])
+  messages  ConversationMessage[]
+  agentRuns AgentRun[]
+  carts     Cart[]
+
+  @@index([merchantId])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+model ConversationMessage {
+  id             String      @id
+  conversationId String
+  role           MessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  TIMEOUT
+}
+
+model AgentRun {
+  id               String         @id
+  merchantId       String
+  agentType        String
+  conversationId   String?
+  sessionId        String?
+  status           AgentRunStatus @default(RUNNING)
+  modelProvider    String?
+  model            String?
+  promptTokens     Int?
+  completionTokens Int?
+  error            Json?
+  startedAt        DateTime       @default(now())
+  completedAt      DateTime?
+
+  merchant     Merchant        @relation(fields: [merchantId], references: [id])
+  conversation Conversation?   @relation(fields: [conversationId], references: [id])
+  toolCalls    AgentToolCall[]
+
+  @@index([merchantId, agentType, startedAt])
+}
+
+model AgentToolCall {
+  id         String   @id
+  agentRunId String
+  toolName   String
+  input      Json
+  output     Json?
+  status     String
+  errorCode  String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id])
+
+  @@index([agentRunId])
+}
+
+// ─── Commerce ──────────────────────────────────────────────────────────────
+
+enum CartStatus {
+  OPEN
+  CONVERTED
+  ABANDONED
+  EXPIRED
+}
+
+model Cart {
+  id         String     @id
+  merchantId String
+  customerId String?
+  sessionId  String?
+  status     CartStatus @default(OPEN)
+  currency   String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  merchant       Merchant      @relation(fields: [merchantId], references: [id])
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  session        Session?      @relation(fields: [sessionId], references: [id])
+  items          CartItem[]
+  orders         Order[]
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+  conversationId String?
+
+  @@index([merchantId, status])
+}
+
+model CartItem {
+  id             String   @id
+  cartId         String
+  productId      String
+  variantId      String?
+  quantity       Int
+  unitPriceMinor Int
+  createdAt      DateTime @default(now())
+
+  cart    Cart            @relation(fields: [cartId], references: [id])
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, productId, variantId])
+}
+
+enum OrderStatus {
+  CREATED
+  AWAITING_PAYMENT
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id            String      @id
+  merchantId    String
+  customerId    String?
+  cartId        String?
+  sessionId     String?
+  status        OrderStatus @default(CREATED)
+  subtotalMinor Int
+  totalMinor    Int
+  currency      String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  merchant Merchant    @relation(fields: [merchantId], references: [id])
+  customer Customer?   @relation(fields: [customerId], references: [id])
+  cart     Cart?       @relation(fields: [cartId], references: [id])
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([merchantId, status, createdAt])
+}
+
+model OrderItem {
+  id             String  @id
+  orderId        String
+  productId      String
+  variantId      String?
+  quantity       Int
+  unitPriceMinor Int
+  titleSnapshot  String
+
+  order   Order           @relation(fields: [orderId], references: [id])
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+}
+
+enum PaymentState {
+  CREATED
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+model Payment {
+  id                String       @id
+  merchantId        String
+  orderId           String
+  state             PaymentState @default(CREATED)
+  amountMinor       Int
+  currency          String
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+  method            String?
+  errorCode         String?
+  errorMessage      String?
+  capturedAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  merchant   Merchant       @relation(fields: [merchantId], references: [id])
+  order      Order          @relation(fields: [orderId], references: [id])
+  events     PaymentEvent[]
+  customer   Customer?      @relation(fields: [customerId], references: [id])
+  customerId String?
+
+  @@unique([merchantId, razorpayOrderId])
+  @@index([merchantId, state])
+}
+
+model PaymentEvent {
+  id        String   @id
+  paymentId String
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([paymentId, createdAt])
+}
+
+// ─── Integrations / providers ───────────────────────────────────────────────
+
+model Integration {
+  id                   String    @id
+  merchantId           String
+  provider             String
+  status               String    @default("DISCONNECTED")
+  encryptedCredentials Json?
+  scopes               Json?
+  lastSuccessAt        DateTime?
+  lastErrorAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, provider])
+}
+
+model LlmProviderConfig {
+  id                 String   @id
+  merchantId         String
+  provider           String
+  model              String
+  encryptedApiKey    String
+  isDefault          Boolean  @default(false)
+  fallbackProviderId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  merchant   Merchant            @relation(fields: [merchantId], references: [id])
+  fallback   LlmProviderConfig?  @relation("LlmFallback", fields: [fallbackProviderId], references: [id])
+  dependents LlmProviderConfig[] @relation("LlmFallback")
+
+  @@index([merchantId])
+}
+
+model NotificationChannel {
+  id              String   @id
+  merchantId      String
+  type            String
+  status          String   @default("DISCONNECTED")
+  encryptedConfig String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  merchant      Merchant       @relation(fields: [merchantId], references: [id])
+  notifications Notification[]
+
+  @@unique([merchantId, type])
+}
+
+// ─── MCP ───────────────────────────────────────────────────────────────────
+
+model McpServer {
+  id         String    @id
+  merchantId String
+  name       String
+  apiKeyHash String    @unique
+  enabled    Boolean   @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  merchant Merchant      @relation(fields: [merchantId], references: [id])
+  calls    McpToolCall[]
+
+  @@index([merchantId])
+}
+
+model McpToolCall {
+  id         String   @id
+  merchantId String
+  serverId   String?
+  toolName   String
+  callerInfo Json?
+  input      Json
+  output     Json?
+  status     String
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  merchant Merchant   @relation(fields: [merchantId], references: [id])
+  server   McpServer? @relation(fields: [serverId], references: [id])
+
+  @@index([merchantId, toolName, createdAt])
+}
+
+// ─── Webhooks / notifications ──────────────────────────────────────────────
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  SKIPPED
+}
+
+model WebhookEvent {
+  id              String        @id
+  provider        String
+  externalEventId String
+  merchantId      String?
+  signatureValid  Boolean       @default(false)
+  status          WebhookStatus @default(RECEIVED)
+  payload         Json
+  error           Json?
+  receivedAt      DateTime      @default(now())
+  processedAt     DateTime?
+
+  @@unique([provider, externalEventId])
+  @@index([status, receivedAt])
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model Notification {
+  id             String             @id
+  merchantId     String
+  channelId      String
+  customerId     String?
+  purpose        String
+  body           String
+  status         NotificationStatus @default(QUEUED)
+  idempotencyKey String             @unique
+  error          Json?
+  sentAt         DateTime?
+  createdAt      DateTime           @default(now())
+
+  merchant Merchant            @relation(fields: [merchantId], references: [id])
+  channel  NotificationChannel @relation(fields: [channelId], references: [id])
+  customer Customer?           @relation(fields: [customerId], references: [id])
+
+  @@index([merchantId, status, createdAt])
+}
+
+// ─── Intelligence ──────────────────────────────────────────────────────────
+
+model GrowthOpportunity {
+  id             String    @id
+  merchantId     String
+  websiteId      String?
+  type           String
+  severity       String
+  refType        String?
+  refId          String?
+  evidence       Json?
+  recommendation String?
+  status         String    @default("OPEN")
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, type, refType, refId])
+  @@index([merchantId, status])
+}
+
+model AnalyticsDaily {
+  id         String   @id
+  merchantId String
+  websiteId  String?
+  date       DateTime @db.Date
+  metrics    Json
+  computedAt DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, websiteId, date])
+  @@index([merchantId, date])
+}
+
+// ─── Security / ops ────────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String   @id
+  actorUserId  String?
+  actorRole    String?
+  merchantId   String?
+  action       String
+  resourceType String
+  resourceId   String?
+  requestId    String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  actor    User?     @relation("AuditLogActor", fields: [actorUserId], references: [id])
+  merchant Merchant? @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, createdAt])
+  @@index([action, createdAt])
+}
+
+model ApiKey {
+  id          String    @id
+  merchantId  String
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  scopes      Json?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+}
+
+model RefreshToken {
+  id           String    @id
+  userId       String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  userAgent    String?
+  ipHash       String?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
 }
