@@ -1,0 +1,27 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #020617;
+  color: #e2e8f0;
+}
+.input {
+  width: 100%;
+  border: 1px solid #334155;
+  background: #0f172a;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: inherit;
+}
+button {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+}
+header button {
+  width: auto;
+  background: #1e293b;
+}

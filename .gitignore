@@ -22,3 +22,6 @@ Thumbs.db
 skills-lock.json
 
 /generated/prisma
+
+apps/desktop/src-tauri/target/
+apps/desktop/dist/
