@@ -9,6 +9,7 @@ import type { EventsService } from "../src/modules/events/events.service";
 import type { ConversationsService } from "../src/modules/conversations/conversations.service";
 import type { OrderService } from "../src/modules/orders/order.service";
 import type { PaymentService } from "../src/modules/payments/payment.service";
+import type { AgentRuntimeService } from "../src/modules/ai-buyer/agent-runtime.service";
 
 function fakeLlm(scripted: string[]): LLMProvider {
   let i = 0;
@@ -126,7 +127,10 @@ interface Overrides {
   conversations?: ConversationsService;
   orders?: OrderService;
   payments?: PaymentService;
+  runtime?: AgentRuntimeService;
 }
+
+const fakeRuntime = { logToolCall: async () => {} } as unknown as AgentRuntimeService;
 
 function makeAgent(scripted: string[], o: Overrides = {}) {
   return new ShoppingAgentService(
@@ -137,6 +141,7 @@ function makeAgent(scripted: string[], o: Overrides = {}) {
     o.conversations ?? (fakeConversations() as unknown as ConversationsService),
     o.orders ?? (fakeOrders() as unknown as OrderService),
     o.payments ?? (fakePayments() as unknown as PaymentService),
+    o.runtime ?? fakeRuntime,
   );
 }
 

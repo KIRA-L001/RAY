@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { type Json } from "@ray/database";
 import { LLM_PROVIDER, type LLMProvider } from "../../common/llm/llm-provider.interface";
 import { CatalogService } from "../catalog/catalog.service";
 import { CartService, type CartItemInput } from "../cart/cart.service";
@@ -6,6 +7,7 @@ import { EventsService } from "../events/events.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { OrderService } from "../orders/order.service";
 import { PaymentService } from "../payments/payment.service";
+import { AgentRuntimeService } from "./agent-runtime.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -57,6 +59,7 @@ export class ShoppingAgentService {
     @Inject(ConversationsService) private readonly conversations: ConversationsService,
     @Inject(OrderService) private readonly orders: OrderService,
     @Inject(PaymentService) private readonly payments: PaymentService,
+    @Inject(AgentRuntimeService) private readonly runtime: AgentRuntimeService,
   ) {}
 
   private readonly tools: Tool[] = [
@@ -269,7 +272,7 @@ export class ShoppingAgentService {
   }
 
   /** Run the tool-calling loop and yield the final answer as text tokens. */
-  async *run(history: AgentMessage[], ctx: ToolContext): AsyncGenerator<string> {
+  async *run(history: AgentMessage[], ctx: ToolContext, agentRunId?: string): AsyncGenerator<string> {
     const toolCatalog = this.tools.map((t) => `- ${t.name}: ${t.description} (args: ${t.parameters})`).join("\n");
     const messages: AgentMessage[] = [
       { role: "system", content: `${SYSTEM_PROMPT}\n\nTools:\n${toolCatalog}` },
@@ -284,13 +287,29 @@ export class ShoppingAgentService {
         return;
       }
       let result: string;
+      const started = Date.now();
+      let status: "SUCCESS" | "ERROR" = "SUCCESS";
+      let errorCode: string | null = null;
       try {
         result = await call.tool.execute(call.args, ctx);
       } catch (err) {
         result = `Tool error: ${err instanceof Error ? err.message : "failed"}`;
+        status = "ERROR";
+        errorCode = err instanceof Error ? err.name : "TOOL_ERROR";
       }
       // ponytail: tool output fed back as a user turn; trusted only as data, never as instructions.
       messages.push({ role: "user", content: `Tool result (${call.tool.name}): ${result}` });
+      if (agentRunId) {
+        await this.runtime.logToolCall({
+          agentRunId,
+          toolName: call.tool.name,
+          args: call.args as Json,
+          result,
+          status,
+          durationMs: Date.now() - started,
+          errorCode,
+        });
+      }
     }
     yield "Sorry, I could not complete that request.";
   }

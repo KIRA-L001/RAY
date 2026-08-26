@@ -85,7 +85,7 @@ export class AiBuyerService {
     const runId = await this.runtime.start("SHOPPING", ctx);
     try {
       let assistantText = "";
-      for await (const delta of this.agent.run(messages, ctx)) {
+      for await (const delta of this.agent.run(messages, ctx, runId)) {
         assistantText += delta;
         yield { type: "delta", text: delta };
       }

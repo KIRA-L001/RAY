@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { getDb } from "@ray/database";
+import { getDb, type Json } from "@ray/database";
 
 export interface AgentRunContext {
   merchantId: string;
@@ -36,6 +36,30 @@ export class AgentRuntimeService {
         completedAt: new Date(),
         promptTokens: tokens?.promptTokens ?? null,
         completionTokens: tokens?.completionTokens ?? null,
+      },
+    });
+  }
+
+  /** Record one tool invocation for an agent run (Task 72: tool framework trace). */
+  async logToolCall(params: {
+    agentRunId: string;
+    toolName: string;
+    args: unknown;
+    result: string;
+    status: "SUCCESS" | "ERROR";
+    durationMs: number;
+    errorCode?: string | null;
+  }): Promise<void> {
+    await this.db.agentToolCall.create({
+      data: {
+        id: randomUUID(),
+        agentRunId: params.agentRunId,
+        toolName: params.toolName,
+        input: params.args as Json,
+        output: params.result,
+        status: params.status,
+        durationMs: params.durationMs,
+        errorCode: params.errorCode ?? null,
       },
     });
   }
