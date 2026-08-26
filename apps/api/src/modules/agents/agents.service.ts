@@ -32,7 +32,15 @@ export class AgentsService {
 
   async runAll(merchantId: string): Promise<Record<AgentName, number>> {
     const out = {} as Record<AgentName, number>;
-    for (const agent of AGENTS) out[agent] = await this.run(merchantId, agent);
+    for (const agent of AGENTS) {
+      try {
+        out[agent] = await this.run(merchantId, agent);
+        // ponytail: a single agent failure must not abort the batch. `run()` already
+        // records the AgentRun as FAILED; -1 signals that to the caller.
+      } catch {
+        out[agent] = -1;
+      }
+    }
     return out;
   }
 

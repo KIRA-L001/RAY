@@ -54,3 +54,19 @@ test("agent runtime records tool calls linked to the run", { skip: !dbConfigured
     await db.merchant.deleteMany({ where: { id: merchantId } });
   }
 });
+
+test("agent runtime records a FAILED status", { skip: !dbConfigured }, async () => {
+  const db = getDb();
+  const merchantId = `merchant_${rid()}`;
+  await db.merchant.create({ data: { id: merchantId, name: "M", slug: `m-${rid()}` } });
+  const svc = new AgentRuntimeService();
+  const runId = await svc.start("SHOPPING", { merchantId });
+  try {
+    await svc.finish(runId, "FAILED");
+    const failed = await db.agentRun.findUnique({ where: { id: runId }, select: { status: true } });
+    assert.equal(failed?.status, "FAILED");
+  } finally {
+    await db.agentRun.deleteMany({ where: { id: runId } });
+    await db.merchant.deleteMany({ where: { id: merchantId } });
+  }
+});
