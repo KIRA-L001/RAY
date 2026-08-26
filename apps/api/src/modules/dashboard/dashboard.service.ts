@@ -8,6 +8,9 @@ export interface DashboardSummary {
   newCustomers30d: number;
   identifiedCustomers: number;
   conversations: number;
+  activeConversations: number;
+  totalMessages: number;
+  avgMessagesPerConversation: number;
   revenueMinor: number;
   aiRevenueMinor: number;
   averageOrderValueMinor: number;
@@ -22,7 +25,7 @@ export class DashboardService {
   /** Merchant-scoped summary for the desktop dashboard. Analytics depth is Phase 6 Tasks 64-70. */
   async summary(merchantId: string): Promise<DashboardSummary> {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, paidAgg, aiAgg, aovAgg, byStatus, sample] =
+    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, paidAgg, aiAgg, aovAgg, byStatus, sample] =
       await Promise.all([
         this.db.product.count({ where: { merchantId, deletedAt: null } }),
         this.db.order.count({ where: { merchantId } }),
@@ -32,6 +35,8 @@ export class DashboardService {
           where: { merchantId, deletedAt: null, OR: [{ email: { not: null } }, { phone: { not: null } }] },
         }),
         this.db.conversation.count({ where: { merchantId } }),
+        this.db.conversation.count({ where: { merchantId, status: "ACTIVE" } }),
+        this.db.conversationMessage.count({ where: { conversation: { merchantId } } }),
         this.db.order.aggregate({ where: { merchantId, status: "PAID" }, _sum: { totalMinor: true } }),
         // AI-attributed revenue: paid orders whose cart came from an AI conversation (Cart.conversationId).
         this.db.order.aggregate({
@@ -58,6 +63,9 @@ export class DashboardService {
       newCustomers30d,
       identifiedCustomers,
       conversations,
+      activeConversations,
+      totalMessages,
+      avgMessagesPerConversation: conversations ? Math.round((totalMessages / conversations) * 10) / 10 : 0,
       revenueMinor: paidAgg._sum.totalMinor ?? 0,
       aiRevenueMinor: aiAgg._sum.totalMinor ?? 0,
       averageOrderValueMinor: Math.round(aovAgg._avg.totalMinor ?? 0),
