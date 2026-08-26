@@ -20,6 +20,28 @@ export interface IdentifyProps {
 }
 
 const DEFAULT_FLUSH_AT = 10;
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Reads/writes a storage-backed id, generating it on first use.
+ * Falls back to a fresh in-memory id when storage is blocked
+ * (iframes, privacy settings) — the sensor must never throw. */
+function storedId(storage: Storage | undefined, key: string, maxAgeMs?: number): string {
+  const fresh = crypto.randomUUID();
+  if (!storage) return fresh;
+  try {
+    const raw = storage.getItem(key);
+    if (raw) {
+      const record = JSON.parse(raw) as { v: string; t?: number };
+      if (record.v && (!maxAgeMs || record.t !== undefined && Date.now() - record.t < maxAgeMs)) {
+        return record.v;
+      }
+    }
+    storage.setItem(key, JSON.stringify({ v: fresh, t: Date.now() }));
+    return fresh;
+  } catch {
+    return fresh;
+  }
+}
 
 /**
  * Browser event sensor (spec §11). Holds no secrets; every payload is
@@ -29,11 +51,12 @@ export function createRay(config: RayConfig) {
   const fetchImpl = config.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const flushAt = config.flushAt ?? DEFAULT_FLUSH_AT;
   const queue: EventEnvelope[] = [];
-  // ponytail: `let` reserved for Task 36 (session tracking) which will reassign these
-  const sessionId = config.sessionId ?? crypto.randomUUID();
-  const anonymousId = config.anonymousId ?? crypto.randomUUID();
+  // ponytail: localStorage/sessionStorage only; no cross-subdomain cookie id — add if merchants use multiple subdomains
+  const anonymousId =
+    config.anonymousId ?? storedId(globalThis.localStorage, "ray:anon");
+  let sessionId = config.sessionId ?? storedId(globalThis.sessionStorage, "ray:sess", SESSION_TIMEOUT_MS);
 
-  function envelope(eventType: SdkEventType, data: Record<string, unknown>): EventEnvelope {
+  function envelope(eventType: SdkEventType, sessionId: string, data: Record<string, unknown>): EventEnvelope {
     return {
       eventId: crypto.randomUUID(),
       eventType,
@@ -65,8 +88,17 @@ export function createRay(config: RayConfig) {
     send(queue.splice(0));
   }
 
+  function currentSessionId(): string {
+    // ponytail: rotation is evaluated on access, not by a timer — a page idle
+    // >30min rotates lazily at next event/access instead of precisely at expiry
+    if (!config.sessionId) {
+      sessionId = storedId(globalThis.sessionStorage, "ray:sess", SESSION_TIMEOUT_MS);
+    }
+    return sessionId;
+  }
+
   function track(eventType: SdkEventType, data: Record<string, unknown> = {}): void {
-    queue.push(envelope(eventType, data));
+    queue.push(envelope(eventType, currentSessionId(), data));
     if (queue.length >= flushAt) flush();
   }
 
@@ -74,7 +106,7 @@ export function createRay(config: RayConfig) {
     track("customer_identified", { ...props });
   }
 
-  return { track, identify, flush };
+  return { track, identify, flush, sessionId: currentSessionId, anonymousId: () => anonymousId };
 }
 
 export type Ray = ReturnType<typeof createRay>;

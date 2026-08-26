@@ -3,6 +3,16 @@ import { test } from "node:test";
 import { createRay } from "../src/index.ts";
 import type { EventEnvelope } from "@ray/types";
 
+class MemStorage {
+  #map = new Map<string, string>();
+  getItem(k: string) {
+    return this.#map.get(k) ?? null;
+  }
+  setItem(k: string, v: string) {
+    this.#map.set(k, String(v));
+  }
+}
+
 function fakeFetch() {
   const calls: Array<{ url: string; body: EventEnvelope[] }> = [];
   const impl = ((url: string | URL | Request, init?: RequestInit) => {
@@ -62,4 +72,58 @@ test("network failure never throws into the merchant page", () => {
   const ray = createRay({ ...config, fetchImpl: failing });
   ray.track("page_view");
   ray.flush();
+});
+
+function withStorages(local: Storage | undefined, session: Storage | undefined, fn: () => void) {
+  const g = globalThis as { localStorage?: Storage; sessionStorage?: Storage };
+  const { localStorage: l, sessionStorage: s } = g;
+  if (local === undefined) delete g.localStorage;
+  else g.localStorage = local;
+  if (session === undefined) delete g.sessionStorage;
+  else g.sessionStorage = session;
+  try {
+    fn();
+  } finally {
+    if (l === undefined) delete g.localStorage;
+    else g.localStorage = l;
+    if (s === undefined) delete g.sessionStorage;
+    else g.sessionStorage = s;
+  }
+}
+
+const noopFetch = (() => Promise.resolve(new Response())) as typeof fetch;
+const bare = { endpoint: config.endpoint, websiteId: config.websiteId };
+
+test("anonymousId persists across instances via storage", () => {
+  withStorages(new MemStorage() as unknown as Storage, new MemStorage() as unknown as Storage, () => {
+    const a = createRay({ ...bare, fetchImpl: noopFetch, flushAt: 100 });
+    const b = createRay({ ...bare, fetchImpl: noopFetch, flushAt: 100 });
+    assert.equal(b.anonymousId(), a.anonymousId());
+    assert.equal(b.sessionId(), a.sessionId());
+  });
+});
+
+test("sessionId rotates when the stored session record is older than the timeout", () => {
+  const session = new MemStorage();
+  withStorages(new MemStorage() as unknown as Storage, session as unknown as Storage, () => {
+    const ray = createRay({ ...bare, fetchImpl: noopFetch, flushAt: 100 });
+    const before = ray.sessionId();
+    assert.ok(session.getItem("ray:sess"), "session record written at init");
+    const raw = session.getItem("ray:sess")!;
+    const record = JSON.parse(raw) as { v: string; t: number };
+    session.setItem("ray:sess", JSON.stringify({ v: record.v, t: record.t - 31 * 60 * 1000 }));
+    assert.notEqual(ray.sessionId(), before);
+  });
+});
+
+test("blocked storage falls back to generated ids without throwing", () => {
+  withStorages(undefined, undefined, () => {
+    let id = "";
+    assert.doesNotThrow(() => {
+      const ray = createRay({ ...config, fetchImpl: noopFetch, flushAt: 1 });
+      id = ray.anonymousId();
+      ray.track("page_view");
+    });
+    assert.ok(id.length > 0);
+  });
 });
