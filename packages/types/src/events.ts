@@ -20,7 +20,8 @@ export interface EventEnvelope {
   eventId: string;
   eventType: SdkEventType;
   merchantId: string | null;
-  websiteId: string;
+  /** Resolved server-side from the authenticated site key; client value is ignored. */
+  websiteId: string | null;
   sessionId: string;
   customerId: string | null;
   anonymousId: string;

@@ -3,8 +3,8 @@ import type { EventEnvelope, SdkEventType } from "@ray/types";
 export interface RayConfig {
   /** RAY ingest base URL, e.g. "https://api.ray.example". */
   endpoint: string;
-  /** Publishable website identifier. Never a secret. */
-  websiteId: string;
+  /** Publishable site key ("sitekey_...") from the merchant dashboard. Never a secret. */
+  siteKey: string;
   sessionId?: string;
   anonymousId?: string;
   /** Queue size that triggers an automatic flush. Default 10. */
@@ -66,7 +66,8 @@ export function createRay(config: RayConfig) {
       eventId: `evt_${crypto.randomUUID()}`,
       eventType,
       merchantId: null,
-      websiteId: config.websiteId,
+      // Resolved server-side from the site key; client value is ignored.
+      websiteId: "",
       sessionId,
       customerId: null,
       anonymousId,
@@ -82,7 +83,7 @@ export function createRay(config: RayConfig) {
   function send(events: EventEnvelope[]): void {
     void fetchImpl(`${config.endpoint}/v1/events`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", authorization: `Bearer ${config.siteKey}` },
       body: JSON.stringify(events),
       keepalive: true,
     }).catch(() => {});

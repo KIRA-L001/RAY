@@ -14,9 +14,13 @@ class MemStorage {
 }
 
 function fakeFetch() {
-  const calls: Array<{ url: string; body: EventEnvelope[] }> = [];
+  const calls: Array<{ url: string; auth?: string; body: EventEnvelope[] }> = [];
   const impl = ((url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as EventEnvelope[] });
+    calls.push({
+      url: String(url),
+      auth: new Headers(init?.headers).get("authorization") ?? undefined,
+      body: JSON.parse(String(init?.body)) as EventEnvelope[],
+    });
     return Promise.resolve(new Response(null, { status: 202 }));
   }) as typeof fetch;
   return { impl, calls };
@@ -24,7 +28,7 @@ function fakeFetch() {
 
 const config = {
   endpoint: "https://api.ray.test",
-  websiteId: "site_test",
+  siteKey: "sitekey_test",
   sessionId: "sess_1",
   anonymousId: "anon_1",
 };
@@ -38,7 +42,7 @@ test("queues events and flushes as a batch to /v1/events", () => {
   assert.equal(calls[0]!.url, "https://api.ray.test/v1/events");
   const [evt] = calls[0]!.body;
   assert.equal(evt!.eventType, "page_view");
-  assert.equal(evt!.websiteId, "site_test");
+  assert.ok(calls[0]!.auth?.startsWith("Bearer sitekey_"), "site key sent as bearer");
   assert.equal(evt!.sessionId, "sess_1");
   assert.equal(evt!.anonymousId, "anon_1");
   assert.equal(evt!.merchantId, null);
@@ -92,7 +96,7 @@ function withStorages(local: Storage | undefined, session: Storage | undefined, 
 }
 
 const noopFetch = (() => Promise.resolve(new Response())) as typeof fetch;
-const bare = { endpoint: config.endpoint, websiteId: config.websiteId };
+const bare = { endpoint: config.endpoint, siteKey: config.siteKey };
 
 test("anonymousId persists across instances via storage", () => {
   withStorages(new MemStorage() as unknown as Storage, new MemStorage() as unknown as Storage, () => {

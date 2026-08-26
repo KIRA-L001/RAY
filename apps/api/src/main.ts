@@ -27,16 +27,30 @@ async function bootstrap(): Promise<void> {
     reply.header("x-request-id", req.id);
   });
   await app.register(cookie);
-  // Strict allowlist, never "*": admin (3000) and desktop dev (5173). Production origins via env (Task 123).
+  // Per-request CORS: strict credential allowlist for first-party apps;
+  // /v1/events reflects any origin without credentials (public browser sensor).
   await app.register(cors, {
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "tauri://localhost",
-      "http://tauri.localhost",
-    ],
-    credentials: true,
+    delegator: async (req) => {
+      if (req.url.startsWith("/v1/events")) {
+        return {
+          origin: req.headers.origin ?? "*",
+          credentials: false,
+          methods: ["POST", "OPTIONS"],
+          allowedHeaders: ["content-type", "authorization"],
+        };
+      }
+      return {
+        // admin (3000), desktop dev (5173), tauri. Production origins via env (Task 123).
+        origin: [
+          "http://localhost:3000",
+          "http://localhost:5173",
+          "http://127.0.0.1:5173",
+          "tauri://localhost",
+          "http://tauri.localhost",
+        ],
+        credentials: true,
+      };
+    },
   });
   await app.register(helmet, { contentSecurityPolicy: false });
 

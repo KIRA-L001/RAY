@@ -5,5 +5,6 @@ import { WebsitesService } from "./websites.service";
 @Module({
   controllers: [WebsitesController],
   providers: [WebsitesService],
+  exports: [WebsitesService],
 })
 export class WebsitesModule {}
