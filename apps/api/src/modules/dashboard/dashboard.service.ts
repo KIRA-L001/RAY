@@ -11,6 +11,8 @@ export interface DashboardSummary {
   activeConversations: number;
   totalMessages: number;
   avgMessagesPerConversation: number;
+  topProducts: { productId: string; title: string; unitsSold: number }[];
+  newProducts30d: number;
   revenueMinor: number;
   aiRevenueMinor: number;
   averageOrderValueMinor: number;
@@ -25,7 +27,7 @@ export class DashboardService {
   /** Merchant-scoped summary for the desktop dashboard. Analytics depth is Phase 6 Tasks 64-70. */
   async summary(merchantId: string): Promise<DashboardSummary> {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, paidAgg, aiAgg, aovAgg, byStatus, sample] =
+    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, newProducts30d, topAgg, paidAgg, aiAgg, aovAgg, byStatus, sample] =
       await Promise.all([
         this.db.product.count({ where: { merchantId, deletedAt: null } }),
         this.db.order.count({ where: { merchantId } }),
@@ -37,6 +39,15 @@ export class DashboardService {
         this.db.conversation.count({ where: { merchantId } }),
         this.db.conversation.count({ where: { merchantId, status: "ACTIVE" } }),
         this.db.conversationMessage.count({ where: { conversation: { merchantId } } }),
+        this.db.product.count({ where: { merchantId, deletedAt: null, createdAt: { gte: since } } }),
+        // Top-selling products by units from paid orders.
+        this.db.orderItem.groupBy({
+          by: ["productId"],
+          where: { order: { merchantId, status: "PAID" } },
+          _sum: { quantity: true },
+          orderBy: { _sum: { quantity: "desc" } },
+          take: 5,
+        }),
         this.db.order.aggregate({ where: { merchantId, status: "PAID" }, _sum: { totalMinor: true } }),
         // AI-attributed revenue: paid orders whose cart came from an AI conversation (Cart.conversationId).
         this.db.order.aggregate({
@@ -56,6 +67,20 @@ export class DashboardService {
     const ordersByStatus: Record<string, number> = {};
     for (const row of byStatus) ordersByStatus[row.status] = row._count._all;
 
+    // ponytail: title uses current Product.name; order-time titleSnapshot would need a join if names change.
+    const names = topAgg.length
+      ? await this.db.product.findMany({
+          where: { id: { in: topAgg.map((t) => t.productId) } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameById = new Map(names.map((n) => [n.id, n.name]));
+    const topProducts = topAgg.map((t) => ({
+      productId: t.productId,
+      title: nameById.get(t.productId) ?? "Unknown",
+      unitsSold: t._sum.quantity ?? 0,
+    }));
+
     return {
       products,
       orders,
@@ -66,6 +91,8 @@ export class DashboardService {
       activeConversations,
       totalMessages,
       avgMessagesPerConversation: conversations ? Math.round((totalMessages / conversations) * 10) / 10 : 0,
+      topProducts,
+      newProducts30d,
       revenueMinor: paidAgg._sum.totalMinor ?? 0,
       aiRevenueMinor: aiAgg._sum.totalMinor ?? 0,
       averageOrderValueMinor: Math.round(aovAgg._avg.totalMinor ?? 0),
