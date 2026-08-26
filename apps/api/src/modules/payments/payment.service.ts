@@ -12,6 +12,18 @@ export interface RazorpayWebhookBody {
   };
 }
 
+// ponytail: minimal state machine as a const map (no library). Terminal states omit forward transitions.
+const PAYMENT_TRANSITIONS: Record<string, string[]> = {
+  CREATED: ["AUTHORIZED", "CAPTURED", "FAILED", "CANCELLED"],
+  AUTHORIZED: ["CAPTURED", "FAILED", "CANCELLED"],
+  CAPTURED: ["REFUNDED", "PARTIALLY_REFUNDED"],
+  PARTIALLY_REFUNDED: ["REFUNDED"],
+};
+
+function canTransition(from: string, to: string): boolean {
+  return PAYMENT_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
 @Injectable()
 export class PaymentService {
   private readonly db = getDb();
@@ -77,13 +89,16 @@ export class PaymentService {
     if (opts?.razorpayPaymentId && opts?.razorpaySignature) {
       const payment = await this.db.payment.findFirst({
         where: { orderId, merchantId, razorpayOrderId: { not: null } },
-        select: { id: true, razorpayOrderId: true },
+        select: { id: true, razorpayOrderId: true, state: true },
       });
       if (!payment?.razorpayOrderId) {
         throw new AppException(409, "NO_RAZORPAY_ORDER", "No Razorpay order to verify against");
       }
       const ok = this.razorpay.verifyPaymentSignature(payment.razorpayOrderId, opts.razorpayPaymentId, opts.razorpaySignature);
       if (!ok) throw new AppException(400, "INVALID_SIGNATURE", "Payment signature verification failed");
+      if (payment.state === "CAPTURED" || !canTransition(payment.state, "CAPTURED")) {
+        throw new AppException(409, "INVALID_STATE", `Cannot capture payment in state ${payment.state}`);
+      }
       await this.db.payment.update({
         where: { id: payment.id },
         data: { state: "CAPTURED", razorpayPaymentId: opts.razorpayPaymentId, capturedAt: new Date() },
@@ -127,7 +142,10 @@ export class PaymentService {
       where: { razorpayOrderId },
       select: { id: true, merchantId: true, orderId: true, state: true },
     });
-    if (!payment || payment.state === "CAPTURED") return;
+    if (!payment) return;
+    // ponytail: idempotency via state guard — duplicate webhook retries cannot double-capture;
+    // event-id-level dedupe would need a processed-events store (add if side-effects beyond capture appear).
+    if (payment.state === "CAPTURED" || !canTransition(payment.state, "CAPTURED")) return;
     await this.db.payment.update({ where: { id: payment.id }, data: { state: "CAPTURED", capturedAt: new Date() } });
     await this.db.order.update({ where: { id: payment.orderId, merchantId: payment.merchantId }, data: { status: "PAID" } });
   }
