@@ -24,4 +24,10 @@ export class AgentsController {
   list(@Param("merchantId") merchantId: string, @Query("status") status?: string) {
     return { opportunities: this.svc.listOpportunities(merchantId, status) };
   }
+
+  @Get("runs")
+  runs(@Param("merchantId") merchantId: string, @Query("limit") limit?: string) {
+    const take = limit ? Math.min(Math.max(parseInt(limit, 10) || 50, 200), 200) : 50;
+    return { runs: this.svc.listRuns(merchantId, take) };
+  }
 }

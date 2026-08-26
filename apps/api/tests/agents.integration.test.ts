@@ -113,3 +113,22 @@ test("insights agent flags an abandoned-cart backlog", { skip: !dbConfigured }, 
   const ops = await db.growthOpportunity.findMany({ where: { merchantId, type: "ABANDONED_CART_BACKLOG" } });
   assert.equal(ops.length, 1);
 });
+
+test("agent execution logs list runs with their tool calls", { skip: !dbConfigured }, async () => {
+  const db = getDb();
+  const merchantId = `merchant_${rid()}`;
+  await db.merchant.create({ data: { id: merchantId, name: "M", slug: `m-${rid()}` } });
+  const runtime = new AgentRuntimeService();
+  const runId = await runtime.start("GROWTH", { merchantId });
+  await runtime.logToolCall({ agentRunId: runId, toolName: "search_products", args: { query: "x" }, result: "[]", status: "SUCCESS", durationMs: 5 });
+  await runtime.finish(runId, "SUCCEEDED");
+
+  const svc = new AgentsService(new DashboardService(), runtime);
+  const runs = await svc.listRuns(merchantId, 10);
+
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0]!.agentType, "GROWTH");
+  assert.equal(runs[0]!.status, "SUCCEEDED");
+  assert.equal(runs[0]!.toolCalls.length, 1);
+  assert.equal(runs[0]!.toolCalls[0]!.toolName, "search_products");
+});

@@ -221,4 +221,14 @@ export class AgentsService {
       take: 100,
     });
   }
+
+  /** Execution logs: agent runs for a merchant with their tool-call traces (doc golden scenario). */
+  async listRuns(merchantId: string, limit = 50) {
+    return this.db.agentRun.findMany({
+      where: { merchantId },
+      orderBy: { startedAt: "desc" },
+      take: limit,
+      include: { toolCalls: { orderBy: { createdAt: "asc" } } },
+    });
+  }
 }
