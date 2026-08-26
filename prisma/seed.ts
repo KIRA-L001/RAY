@@ -41,7 +41,14 @@ async function main() {
       const existing = await db.website.findFirst({ where: { merchantId: merchant.id, hostname } });
       if (!existing) {
         await db.website.create({
-          data: { id: newId("site"), merchantId: merchant.id, url, hostname, status: "PENDING" },
+          data: {
+            id: newId("site"),
+            merchantId: merchant.id,
+            publicKey: newId("sitekey"),
+            url,
+            hostname,
+            status: "PENDING",
+          },
         });
       }
     }

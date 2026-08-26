@@ -27,7 +27,13 @@ export class WebsitesService {
     }
 
     const website = await this.db.website.create({
-      data: { id: newId("site"), merchantId, url: parsed.toString(), hostname },
+      data: {
+        id: newId("site"),
+        merchantId,
+        publicKey: newId("sitekey"),
+        url: parsed.toString(),
+        hostname,
+      },
     });
 
     try {
@@ -40,6 +46,7 @@ export class WebsitesService {
     return {
       id: website.id,
       merchantId: website.merchantId,
+      publicKey: website.publicKey,
       url: website.url,
       hostname: website.hostname,
       status: website.status,
@@ -53,6 +60,7 @@ export class WebsitesService {
     });
     return websites.map((w) => ({
       id: w.id,
+      publicKey: w.publicKey,
       url: w.url,
       hostname: w.hostname,
       status: w.status,
@@ -71,6 +79,7 @@ export class WebsitesService {
     }
     return {
       id: website.id,
+      publicKey: website.publicKey,
       url: website.url,
       hostname: website.hostname,
       status: website.status,
@@ -80,5 +89,17 @@ export class WebsitesService {
       readyAt: website.readyAt,
       createdAt: website.createdAt,
     };
+  }
+
+  /**
+   * Resolves the SDK site identity (Task 35): public key -> tenant anchor.
+   * Event ingestion (Task 38) must derive merchantId from this lookup,
+   * never from client payloads. Returns null for unknown/deleted sites.
+   */
+  async resolveByPublicKey(publicKey: string) {
+    return this.db.website.findFirst({
+      where: { publicKey, deletedAt: null },
+      select: { id: true, merchantId: true, hostname: true, status: true },
+    });
   }
 }

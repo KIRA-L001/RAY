@@ -25,6 +25,7 @@ export type Id<P extends string> = `${P}_${string}`;
 export type MerchantId = Id<"merchant">;
 export type UserId = Id<"user">;
 export type WebsiteId = Id<"site">;
+export type SiteKeyId = Id<"sitekey">;
 export type ProductId = Id<"prod">;
 export type CustomerId = Id<"cust">;
 export type OrderId = Id<"order">;
@@ -33,6 +34,7 @@ const ID_PREFIXES = {
   merchant: "merchant",
   user: "user",
   site: "site",
+  sitekey: "sitekey",
   prod: "prod",
   cust: "cust",
   order: "order",
