@@ -15,7 +15,10 @@ export class EventsService {
    * Ingestion (spec §12): tenant is resolved from the site key, never the payload.
    * Idempotent via (merchantId, eventId) unique + skipDuplicates.
    */
-  async ingest(events: ValidatedEvent[], authorization: string | undefined): Promise<{ accepted: number }> {
+  async ingest(
+    events: ValidatedEvent[],
+    authorization: string | undefined,
+  ): Promise<{ accepted: number; stored: number; duplicates: number }> {
     const siteKey = authorization?.match(/^Bearer (sitekey_\S+)$/)?.[1];
     if (!siteKey) {
       throw new AppException(401, "UNAUTHORIZED", "Missing or malformed site key");
@@ -27,6 +30,7 @@ export class EventsService {
 
     const now = new Date();
     const sessionIds = new Set(events.map((e) => e.sessionId));
+    let stored = 0;
     await this.db.$transaction(async (tx) => {
       for (const sessionId of sessionIds) {
         const batch = events.filter((e) => e.sessionId === sessionId);
@@ -48,7 +52,7 @@ export class EventsService {
           update: { lastSeenAt: now, ...(customerId ? { customerId } : {}) },
         });
       }
-      await tx.event.createMany({
+      const result = await tx.event.createMany({
         data: events.map((e) => ({
           id: e.eventId,
           eventId: e.eventId,
@@ -65,8 +69,11 @@ export class EventsService {
         })),
         skipDuplicates: true,
       });
+      stored = result.count;
     });
 
-    return { accepted: events.length };
+    // Idempotency (spec §12): (merchantId, eventId) unique + ON CONFLICT DO NOTHING
+    // makes replays and concurrent retries safe; duplicates are reported, not errors.
+    return { accepted: events.length, stored, duplicates: events.length - stored };
   }
 }
