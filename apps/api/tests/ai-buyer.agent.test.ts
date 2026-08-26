@@ -25,6 +25,10 @@ function fakeCatalog() {
         { id: "p1", name: "Test Shoe", brand: "Acme", priceMinor: 4999, currency: "USD", description: "A shoe", sourceUrl: "https://x", confidence: 0.9, category: "Shoes", thumbnailUrl: null, variantCount: 1 },
       ];
     },
+    listProducts: async (merchantId: string) => {
+      calls.push({ kind: "list", merchantId, arg: "" });
+      return [];
+    },
     getProduct: async (merchantId: string, id: string) => {
       calls.push({ kind: "get", merchantId, arg: id });
       return { id, name: "Test Shoe", brand: "Acme", priceMinor: 4999, currency: "USD", description: "A shoe", sourceUrl: "https://x", status: "ACTIVE", variants: [], images: [] };
@@ -80,4 +84,16 @@ test("stops after MAX_AGENT_TURNS if the model keeps emitting tool calls", async
   const out = await collect(agent, [{ role: "user", content: "loop" }], ctx);
   assert.ok(out.includes("could not complete"));
   assert.ok(catalog.calls.length <= 5);
+});
+
+test("recommend_products delegates to semantic search when seeded", async () => {
+  const catalog = fakeCatalog();
+  const agent = new ShoppingAgentService(
+    fakeLlm(['{"tool":"recommend_products","args":{"seed":"gift for runner"}}', "Try this shoe."]),
+    catalog as unknown as CatalogService,
+  );
+  const out = await collect(agent, [{ role: "user", content: "recommend something" }], ctx);
+  assert.ok(out.includes("shoe"));
+  const rec = catalog.calls.find((c) => c.kind === "search");
+  assert.ok(rec && rec.merchantId === "m-tenant-a" && rec.arg === "gift for runner");
 });

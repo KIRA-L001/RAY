@@ -36,7 +36,7 @@ export class ShoppingAgentService {
     @Inject(CatalogService) private readonly catalog: CatalogService,
   ) {}
 
-  private readonly tools: Tool[] = [this.searchProductsTool(), this.getProductTool()];
+  private readonly tools: Tool[] = [this.searchProductsTool(), this.getProductTool(), this.recommendProductsTool()];
 
   private searchProductsTool(): Tool {
     return {
@@ -63,6 +63,26 @@ export class ShoppingAgentService {
         if (!id) return "Missing product id.";
         const product = await this.catalog.getProduct(ctx.merchantId, id);
         return product ? JSON.stringify(product) : "Product not found.";
+      },
+    };
+  }
+
+  private recommendProductsTool(): Tool {
+    return {
+      name: "recommend_products",
+      description: "Recommend products based on an interest, category, or occasion.",
+      parameters: '{ "seed"?: string, "category"?: string, "limit"?: number }',
+      execute: async (args, ctx) => {
+        const limit = Math.min(Number(args.limit ?? 8) || 8, 50);
+        const query = String(args.seed ?? args.category ?? "").slice(0, 200);
+        // ponytail: no popularity/sales signal yet; delegate to semantic search,
+        // else fall back to recent catalog. Add a real ranking signal (views, orders)
+        // before calling this "personalized".
+        const rows = query
+          ? await this.catalog.searchProducts(ctx.merchantId, query)
+          : await this.catalog.listProducts(ctx.merchantId, limit);
+        if (!Array.isArray(rows) || rows.length === 0) return "No recommendations available.";
+        return JSON.stringify(rows.slice(0, limit));
       },
     };
   }
