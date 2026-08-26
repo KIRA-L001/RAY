@@ -147,6 +147,15 @@ export class AgentsService {
         recommendation: "Conversations rarely convert; tune recommendations.",
       });
     }
+    if (s.abandonedCarts > 0 && s.recoverableRevenueMinor > 0) {
+      n += await this.upsert({
+        merchantId,
+        type: "ABANDONED_CART_BACKLOG",
+        severity: s.abandonedCarts > 10 ? "HIGH" : "MEDIUM",
+        evidence: { abandonedCarts: s.abandonedCarts, recoverableRevenueMinor: s.recoverableRevenueMinor },
+        recommendation: "Abandoned carts represent recoverable revenue; enable recovery flows.",
+      });
+    }
     return n;
   }
 

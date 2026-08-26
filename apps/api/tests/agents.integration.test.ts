@@ -87,3 +87,29 @@ test("recovery agent skips carts whose customer has no contact info", { skip: !d
   assert.equal(ops.length, 1);
   assert.equal(ops[0]!.refId, reachableCart);
 });
+
+test("insights agent flags an abandoned-cart backlog", { skip: !dbConfigured }, async () => {
+  const db = getDb();
+  const merchantId = `merchant_${rid()}`;
+  await db.merchant.create({ data: { id: merchantId, name: "M", slug: `m-${rid()}` } });
+  const websiteId = `site_${rid()}`;
+  await db.website.create({
+    data: { id: websiteId, merchantId, publicKey: `pk_${rid()}`, url: "https://x.com", hostname: "x.com", status: "READY" },
+  });
+  const productId = `prod_${rid()}`;
+  await db.product.create({
+    data: { id: productId, merchantId, websiteId, name: "Shoe", priceMinor: 1000, currency: "INR", sourceUrl: `https://x.com/${rid()}` },
+  });
+  const cust = `cust_${rid()}`;
+  await db.customer.create({ data: { id: cust, merchantId, email: "c@d.com" } });
+  await db.cart.create({
+    data: { id: `cart_${rid()}`, merchantId, customerId: cust, currency: "INR", status: "ABANDONED", items: { create: { id: `ci_${rid()}`, productId, quantity: 1, unitPriceMinor: 1000 } } },
+  });
+
+  const svc = new AgentsService(new DashboardService(), new AgentRuntimeService());
+  const results = await svc.run(merchantId, "insights");
+
+  assert.ok(results >= 1);
+  const ops = await db.growthOpportunity.findMany({ where: { merchantId, type: "ABANDONED_CART_BACKLOG" } });
+  assert.equal(ops.length, 1);
+});
