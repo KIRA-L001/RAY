@@ -47,29 +47,56 @@ export class PaymentService {
     return { orderId, razorpayOrderId: rzOrder.id, amountMinor: order.totalMinor, currency: order.currency };
   }
 
-  /** Record a successful payment for an order and mark it paid. No real PSP yet. */
-  async payOrder(merchantId: string, orderId: string, opts?: { method?: string; customerId?: string }) {
+  /**
+   * Complete payment for an order. With Razorpay payment id + signature, the signature
+   * is verified against the Razorpay order before marking captured. Otherwise a local
+   * stub capture is used (test mode / non-Razorpay).
+   */
+  async payOrder(
+    merchantId: string,
+    orderId: string,
+    opts?: { method?: string; customerId?: string; razorpayPaymentId?: string; razorpaySignature?: string },
+  ) {
     const order = await this.db.order.findUnique({
       where: { id: orderId, merchantId },
       select: { id: true, totalMinor: true, currency: true, customerId: true, status: true },
     });
     if (!order) throw new AppException(404, "ORDER_NOT_FOUND", "Order not found");
-    if (order.status === "PAID") return { id: order.id, status: order.status as string, totalMinor: order.totalMinor, currency: order.currency };
+    if (order.status === "PAID") {
+      return { id: order.id, status: order.status as string, totalMinor: order.totalMinor, currency: order.currency };
+    }
 
-    // ponytail: local capture only. Real flow: verify payment.signature via webhook, then set CAPTURED.
-    await this.db.payment.create({
-      data: {
-        id: newId("pay"),
-        merchantId,
-        orderId,
-        state: "CAPTURED",
-        amountMinor: order.totalMinor,
-        currency: order.currency,
-        method: opts?.method ?? "manual",
-        customerId: opts?.customerId ?? order.customerId,
-        capturedAt: new Date(),
-      },
-    });
+    if (opts?.razorpayPaymentId && opts?.razorpaySignature) {
+      const payment = await this.db.payment.findFirst({
+        where: { orderId, merchantId, razorpayOrderId: { not: null } },
+        select: { id: true, razorpayOrderId: true },
+      });
+      if (!payment?.razorpayOrderId) {
+        throw new AppException(409, "NO_RAZORPAY_ORDER", "No Razorpay order to verify against");
+      }
+      const ok = this.razorpay.verifyPaymentSignature(payment.razorpayOrderId, opts.razorpayPaymentId, opts.razorpaySignature);
+      if (!ok) throw new AppException(400, "INVALID_SIGNATURE", "Payment signature verification failed");
+      await this.db.payment.update({
+        where: { id: payment.id },
+        data: { state: "CAPTURED", razorpayPaymentId: opts.razorpayPaymentId, capturedAt: new Date() },
+      });
+    } else {
+      // ponytail: local stub capture; webhook ingestion (Task 56) is the canonical confirm path.
+      await this.db.payment.create({
+        data: {
+          id: newId("pay"),
+          merchantId,
+          orderId,
+          state: "CAPTURED",
+          amountMinor: order.totalMinor,
+          currency: order.currency,
+          method: opts?.method ?? "manual",
+          customerId: opts?.customerId ?? order.customerId,
+          capturedAt: new Date(),
+        },
+      });
+    }
+
     const updated = await this.db.order.update({
       where: { id: orderId, merchantId },
       data: { status: "PAID" },

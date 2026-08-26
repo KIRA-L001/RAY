@@ -220,14 +220,20 @@ export class ShoppingAgentService {
   private payOrderTool(): Tool {
     return {
       name: "pay_order",
-      description: "Pay for an order to complete the purchase.",
-      parameters: '{ "orderId": string, "method"?: string }',
+      description: "Pay for an order to complete the purchase. Provide Razorpay payment details if available.",
+      parameters: '{ "orderId": string, "razorpayPaymentId"?: string, "razorpaySignature"?: string, "method"?: string }',
       execute: async (args, ctx) => {
         const orderId = String(args.orderId ?? "");
         if (!orderId) return "Provide the orderId.";
         const method = typeof args.method === "string" ? args.method : undefined;
-        // ponytail: tenant scope enforced in PaymentService; this is a local capture, not a real PSP.
-        const order = await this.payments.payOrder(ctx.merchantId, orderId, { method, customerId: ctx.customerId });
+        const razorpayPaymentId = typeof args.razorpayPaymentId === "string" ? args.razorpayPaymentId : undefined;
+        const razorpaySignature = typeof args.razorpaySignature === "string" ? args.razorpaySignature : undefined;
+        const order = await this.payments.payOrder(ctx.merchantId, orderId, {
+          method,
+          customerId: ctx.customerId,
+          razorpayPaymentId,
+          razorpaySignature,
+        });
         return JSON.stringify({ orderId: order.id, status: order.status, totalMinor: order.totalMinor, currency: order.currency });
       },
     };

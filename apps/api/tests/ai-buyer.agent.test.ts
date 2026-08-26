@@ -108,8 +108,12 @@ function fakePayments() {
       calls.push({ kind: "rz", merchantId, arg: orderId });
       return { orderId, razorpayOrderId: "rz-1", amountMinor: 9999, currency: "USD" };
     },
-    payOrder: async (merchantId: string, orderId: string, opts?: { method?: string; customerId?: string }) => {
-      calls.push({ kind: "pay", merchantId, arg: { orderId, customerId: opts?.customerId } });
+    payOrder: async (
+      merchantId: string,
+      orderId: string,
+      opts?: { method?: string; customerId?: string; razorpayPaymentId?: string; razorpaySignature?: string },
+    ) => {
+      calls.push({ kind: "pay", merchantId, arg: { orderId, customerId: opts?.customerId, razorpayPaymentId: opts?.razorpayPaymentId, razorpaySignature: opts?.razorpaySignature } });
       return { id: orderId, status: "PAID", totalMinor: 9999, currency: "USD" };
     },
   };
@@ -238,13 +242,16 @@ test("create_order creates the internal order and a tenant-scoped Razorpay order
 
 test("pay_order delegates to PaymentService with the resolved merchant scope", async () => {
   const payments = fakePayments();
-  const agent = makeAgent(['{"tool":"pay_order","args":{"orderId":"order-1"}}', "Paid! Thank you."], { payments: payments as unknown as PaymentService });
+  const agent = makeAgent(['{"tool":"pay_order","args":{"orderId":"order-1","razorpayPaymentId":"pay-1","razorpaySignature":"sig-1"}}', "Paid! Thank you."], { payments: payments as unknown as PaymentService });
   const out = await collect(agent, [{ role: "user", content: "pay now" }], ctx);
   assert.ok(out.includes("Paid"));
   assert.equal(payments.calls[0]?.kind, "pay");
   assert.equal(payments.calls[0]?.merchantId, "m-tenant-a");
-  assert.equal((payments.calls[0]?.arg as { orderId: string }).orderId, "order-1");
-  assert.equal((payments.calls[0]?.arg as { customerId: string }).customerId, "c1");
+  const arg = payments.calls[0]?.arg as { orderId: string; customerId: string; razorpayPaymentId?: string; razorpaySignature?: string };
+  assert.equal(arg.orderId, "order-1");
+  assert.equal(arg.customerId, "c1");
+  assert.equal(arg.razorpayPaymentId, "pay-1");
+  assert.equal(arg.razorpaySignature, "sig-1");
 });
 
 test("get_order delegates to OrderService tenant-scoped", async () => {
