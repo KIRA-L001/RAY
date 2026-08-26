@@ -46,3 +46,20 @@ test("batch rejects empty and oversized payloads", () => {
   assert.throws(() => eventBatchSchema.parse([]));
   assert.throws(() => eventBatchSchema.parse(Array.from({ length: 101 }, () => validEvent())));
 });
+
+const identifyEvent = (data: Record<string, unknown>) =>
+  validEvent({ eventId: "evt_id1", eventType: "customer_identified", data });
+
+test("customer_identified requires explicit identity data", () => {
+  assert.doesNotThrow(() => eventEnvelopeSchema.parse(identifyEvent({ email: "a@b.com" })));
+  assert.throws(() => eventEnvelopeSchema.parse(identifyEvent({})));
+  assert.throws(() => eventEnvelopeSchema.parse(identifyEvent({ email: "not-an-email" })));
+  assert.throws(() => eventEnvelopeSchema.parse(identifyEvent({ phone: "12" })));
+});
+
+test("identity props are never trusted as merchant or session claims", () => {
+  // a claimed merchantId is rejected outright, not passed through
+  assert.throws(() =>
+    eventEnvelopeSchema.parse(validEvent({ merchantId: "merchant_evil" as never })),
+  );
+});
