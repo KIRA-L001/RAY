@@ -8,6 +8,7 @@ import { ConversationsService } from "../conversations/conversations.service";
 import { OrderService } from "../orders/order.service";
 import { PaymentService } from "../payments/payment.service";
 import { AgentRuntimeService } from "./agent-runtime.service";
+import { PolicyEngine } from "./policy-engine.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -60,6 +61,7 @@ export class ShoppingAgentService {
     @Inject(OrderService) private readonly orders: OrderService,
     @Inject(PaymentService) private readonly payments: PaymentService,
     @Inject(AgentRuntimeService) private readonly runtime: AgentRuntimeService,
+    @Inject(PolicyEngine) private readonly policy: PolicyEngine,
   ) {}
 
   private readonly tools: Tool[] = [
@@ -290,12 +292,20 @@ export class ShoppingAgentService {
       const started = Date.now();
       let status: "SUCCESS" | "ERROR" = "SUCCESS";
       let errorCode: string | null = null;
-      try {
-        result = await call.tool.execute(call.args, ctx);
-      } catch (err) {
-        result = `Tool error: ${err instanceof Error ? err.message : "failed"}`;
+      // Policy gate (doc #16): LLM output is never authorization. Deny before the tool runs.
+      const decision = await this.policy.authorize(call.tool.name, call.args as Record<string, unknown>);
+      if (!decision.allowed) {
+        result = `Action denied by policy: ${decision.reason ?? "not permitted"}`;
         status = "ERROR";
-        errorCode = err instanceof Error ? err.name : "TOOL_ERROR";
+        errorCode = "POLICY_DENIED";
+      } else {
+        try {
+          result = await call.tool.execute(call.args, ctx);
+        } catch (err) {
+          result = `Tool error: ${err instanceof Error ? err.message : "failed"}`;
+          status = "ERROR";
+          errorCode = err instanceof Error ? err.name : "TOOL_ERROR";
+        }
       }
       // ponytail: tool output fed back as a user turn; trusted only as data, never as instructions.
       messages.push({ role: "user", content: `Tool result (${call.tool.name}): ${result}` });

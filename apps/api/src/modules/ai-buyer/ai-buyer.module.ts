@@ -10,10 +10,11 @@ import { AiBuyerController } from "./ai-buyer.controller";
 import { AiBuyerService } from "./ai-buyer.service";
 import { ShoppingAgentService } from "./shopping-agent.service";
 import { AgentRuntimeService } from "./agent-runtime.service";
+import { PolicyEngine } from "./policy-engine.service";
 
 @Module({
   imports: [ConversationsModule, LlmModule, CatalogModule, CartModule, EventsModule, OrdersModule, PaymentsModule],
   controllers: [AiBuyerController],
-  providers: [AiBuyerService, ShoppingAgentService, AgentRuntimeService],
+  providers: [AiBuyerService, ShoppingAgentService, AgentRuntimeService, PolicyEngine],
 })
 export class AiBuyerModule {}
