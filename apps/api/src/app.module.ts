@@ -13,6 +13,7 @@ import { WebsitesModule } from "./modules/websites/websites.module";
 import { CategoriesModule } from "./modules/categories/categories.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { EventsModule } from "./modules/events/events.module";
+import { ConversationsModule } from "./modules/conversations/conversations.module";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { EventsModule } from "./modules/events/events.module";
     CategoriesModule,
     CatalogModule,
     EventsModule,
+    ConversationsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
