@@ -95,11 +95,24 @@ export class AgentsService {
   private async recovery(merchantId: string): Promise<number> {
     const carts = await this.db.cart.findMany({
       where: { merchantId, status: "ABANDONED", customerId: { not: null } },
-      select: { id: true },
+      select: { id: true, customerId: true },
       take: 100,
     });
+    // doc #24: only recover carts whose customer is identifiable (has contact info).
+    // ponytail: consent + cooldown + channel gating is Phase 9 (WhatsApp); this is the
+    // deterministic identifiability gate.
+    const customerIds = carts.map((c) => c.customerId).filter((id): id is string => Boolean(id));
+    const reachable = new Set(
+      (
+        await this.db.customer.findMany({
+          where: { id: { in: customerIds }, OR: [{ email: { not: null } }, { phone: { not: null } }] },
+          select: { id: true },
+        })
+      ).map((c) => c.id),
+    );
     let n = 0;
     for (const c of carts) {
+      if (!c.customerId || !reachable.has(c.customerId)) continue;
       n += await this.upsert({
         merchantId,
         type: "CART_RECOVERY",
@@ -107,7 +120,7 @@ export class AgentsService {
         refType: "CART",
         refId: c.id,
         evidence: { cartId: c.id },
-        recommendation: "Abandoned cart with known customer; eligible for recovery.",
+        recommendation: "Abandoned cart with identifiable customer; eligible for recovery.",
       });
     }
     return n;

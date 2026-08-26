@@ -65,3 +65,25 @@ test("growth agent flags a demand spike for a top-selling product", { skip: !dbC
   assert.equal(ops.length, 1);
   assert.equal(ops[0]!.refId, productId);
 });
+
+test("recovery agent skips carts whose customer has no contact info", { skip: !dbConfigured }, async () => {
+  const db = getDb();
+  const merchantId = `merchant_${rid()}`;
+  await db.merchant.create({ data: { id: merchantId, name: "M", slug: `m-${rid()}` } });
+  const noContact = `cust_${rid()}`;
+  await db.customer.create({ data: { id: noContact, merchantId } }); // no email/phone
+  await db.cart.create({ data: { id: `cart_${rid()}`, merchantId, customerId: noContact, currency: "INR", status: "ABANDONED" } });
+
+  const reachable = `cust_${rid()}`;
+  await db.customer.create({ data: { id: reachable, merchantId, email: "b@c.com" } });
+  const reachableCart = `cart_${rid()}`;
+  await db.cart.create({ data: { id: reachableCart, merchantId, customerId: reachable, currency: "INR", status: "ABANDONED" } });
+
+  const svc = new AgentsService(new DashboardService(), new AgentRuntimeService());
+  const results = await svc.run(merchantId, "recovery");
+
+  assert.equal(results, 1);
+  const ops = await db.growthOpportunity.findMany({ where: { merchantId, type: "CART_RECOVERY" } });
+  assert.equal(ops.length, 1);
+  assert.equal(ops[0]!.refId, reachableCart);
+});
