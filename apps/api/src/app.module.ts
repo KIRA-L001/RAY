@@ -14,6 +14,7 @@ import { CategoriesModule } from "./modules/categories/categories.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ConversationsModule } from "./modules/conversations/conversations.module";
+import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ConversationsModule } from "./modules/conversations/conversations.modul
     CatalogModule,
     EventsModule,
     ConversationsModule,
+    AiBuyerModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
