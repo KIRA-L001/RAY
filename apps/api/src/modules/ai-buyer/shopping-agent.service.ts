@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { LLM_PROVIDER, type LLMProvider } from "../../common/llm/llm-provider.interface";
 import { CatalogService } from "../catalog/catalog.service";
+import { CartService } from "../cart/cart.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -34,9 +35,15 @@ export class ShoppingAgentService {
   constructor(
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
     @Inject(CatalogService) private readonly catalog: CatalogService,
+    @Inject(CartService) private readonly cart: CartService,
   ) {}
 
-  private readonly tools: Tool[] = [this.searchProductsTool(), this.getProductTool(), this.recommendProductsTool()];
+  private readonly tools: Tool[] = [
+    this.searchProductsTool(),
+    this.getProductTool(),
+    this.recommendProductsTool(),
+    this.createCartTool(),
+  ];
 
   private searchProductsTool(): Tool {
     return {
@@ -83,6 +90,33 @@ export class ShoppingAgentService {
           : await this.catalog.listProducts(ctx.merchantId, limit);
         if (!Array.isArray(rows) || rows.length === 0) return "No recommendations available.";
         return JSON.stringify(rows.slice(0, limit));
+      },
+    };
+  }
+
+  private createCartTool(): Tool {
+    return {
+      name: "create_cart",
+      description: "Create a shopping cart with initial items so the customer can check out later.",
+      parameters: '{ "items": Array<{ "productId": string, "variantId"?: string, "quantity"?: number }>, "currency"?: string }',
+      execute: async (args, ctx) => {
+        const rawItems = Array.isArray(args.items) ? args.items : [];
+        if (rawItems.length === 0) return "Provide at least one item to create a cart.";
+        const items = rawItems.map((i) => ({
+          productId: String((i as Record<string, unknown>).productId ?? ""),
+          variantId: (i as Record<string, unknown>).variantId ? String((i as Record<string, unknown>).variantId) : undefined,
+          quantity: Number((i as Record<string, unknown>).quantity ?? 1),
+        }));
+        // ponytail: tool is the only cart-mutating entry point; tenant scope is enforced
+        // in CartService (product must belong to merchantId). Updates land in Task 50.
+        const cart = await this.cart.create({
+          merchantId: ctx.merchantId,
+          customerId: ctx.customerId,
+          sessionId: ctx.sessionId,
+          currency: typeof args.currency === "string" ? args.currency : undefined,
+          items,
+        });
+        return JSON.stringify({ cartId: cart.id, currency: cart.currency, status: cart.status, itemCount: cart.items.length });
       },
     };
   }
