@@ -7,6 +7,7 @@ import type { CatalogService } from "../src/modules/catalog/catalog.service";
 import type { CartService } from "../src/modules/cart/cart.service";
 import type { EventsService } from "../src/modules/events/events.service";
 import type { ConversationsService } from "../src/modules/conversations/conversations.service";
+import type { OrderService } from "../src/modules/orders/order.service";
 
 function fakeLlm(scripted: string[]): LLMProvider {
   let i = 0;
@@ -79,11 +80,23 @@ function fakeConversations() {
   };
 }
 
+function fakeOrders() {
+  const calls: Array<{ merchantId: string; cartId: string; customerId?: string }> = [];
+  return {
+    calls,
+    createFromCart: async (merchantId: string, cartId: string, customerId?: string) => {
+      calls.push({ merchantId, cartId, customerId });
+      return { id: "order-1", totalMinor: 9999, currency: "USD", status: "CREATED" };
+    },
+  };
+}
+
 interface Overrides {
   catalog?: CatalogService;
   cart?: CartService;
   events?: EventsService;
   conversations?: ConversationsService;
+  orders?: OrderService;
 }
 
 function makeAgent(scripted: string[], o: Overrides = {}) {
@@ -93,6 +106,7 @@ function makeAgent(scripted: string[], o: Overrides = {}) {
     o.cart ?? (fakeCart() as unknown as CartService),
     o.events ?? (fakeEvents() as unknown as EventsService),
     o.conversations ?? (fakeConversations() as unknown as ConversationsService),
+    o.orders ?? (fakeOrders() as unknown as OrderService),
   );
 }
 
@@ -179,4 +193,14 @@ test("identify_customer resolves identity and links the conversation", async () 
   assert.ok(out.includes("Al"));
   assert.equal(events.calls[0]?.merchantId, "m-tenant-a");
   assert.deepEqual(conversations.calls[0], { conversationId: "conv-1", customerId: "cust-x" });
+});
+
+test("create_order delegates to OrderService with the resolved merchant scope", async () => {
+  const orders = fakeOrders();
+  const agent = makeAgent(['{"tool":"create_order","args":{"cartId":"cart-1"}}', "Order placed!"], { orders: orders as unknown as OrderService });
+  const out = await collect(agent, [{ role: "user", content: "checkout" }], ctx);
+  assert.ok(out.includes("Order"));
+  assert.equal(orders.calls[0]?.merchantId, "m-tenant-a");
+  assert.equal(orders.calls[0]?.cartId, "cart-1");
+  assert.equal(orders.calls[0]?.customerId, "c1");
 });

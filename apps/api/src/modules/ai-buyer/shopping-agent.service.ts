@@ -4,6 +4,7 @@ import { CatalogService } from "../catalog/catalog.service";
 import { CartService, type CartItemInput } from "../cart/cart.service";
 import { EventsService } from "../events/events.service";
 import { ConversationsService } from "../conversations/conversations.service";
+import { OrderService } from "../orders/order.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -53,6 +54,7 @@ export class ShoppingAgentService {
     @Inject(CartService) private readonly cart: CartService,
     @Inject(EventsService) private readonly events: EventsService,
     @Inject(ConversationsService) private readonly conversations: ConversationsService,
+    @Inject(OrderService) private readonly orders: OrderService,
   ) {}
 
   private readonly tools: Tool[] = [
@@ -63,6 +65,7 @@ export class ShoppingAgentService {
     this.addToCartTool(),
     this.updateCartItemTool(),
     this.identifyCustomerTool(),
+    this.createOrderTool(),
   ];
 
   private searchProductsTool(): Tool {
@@ -183,6 +186,21 @@ export class ShoppingAgentService {
         const customerId = await this.events.upsertCustomer(ctx.merchantId, { email, phone, name });
         if (ctx.conversationId) await this.conversations.linkCustomer(ctx.conversationId, customerId);
         return JSON.stringify({ customerId });
+      },
+    };
+  }
+
+  private createOrderTool(): Tool {
+    return {
+      name: "create_order",
+      description: "Create an order from an existing cart to check out.",
+      parameters: '{ "cartId": string }',
+      execute: async (args, ctx) => {
+        const cartId = String(args.cartId ?? "");
+        if (!cartId) return "Provide the cartId.";
+        // ponytail: tenant scope enforced in OrderService; payment is a later step (status stays CREATED).
+        const order = await this.orders.createFromCart(ctx.merchantId, cartId, ctx.customerId);
+        return JSON.stringify({ orderId: order.id, totalMinor: order.totalMinor, currency: order.currency, status: order.status });
       },
     };
   }
