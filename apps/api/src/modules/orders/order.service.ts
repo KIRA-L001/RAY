@@ -57,4 +57,37 @@ export class OrderService {
     });
     return order;
   }
+
+  async getOrder(merchantId: string, orderId: string) {
+    const order = await this.db.order.findUnique({
+      where: { id: orderId, merchantId },
+      select: {
+        id: true,
+        status: true,
+        totalMinor: true,
+        currency: true,
+        createdAt: true,
+        items: { select: { id: true, titleSnapshot: true, quantity: true, unitPriceMinor: true } },
+      },
+    });
+    if (!order) throw new AppException(404, "ORDER_NOT_FOUND", "Order not found");
+    return order;
+  }
+
+  async listOrders(merchantId: string, filter: { customerId?: string; sessionId?: string }) {
+    // ponytail: no pagination/cursor yet; recent 20 by customer or session.
+    return this.db.order.findMany({
+      where: {
+        merchantId,
+        ...(filter.customerId
+          ? { customerId: filter.customerId }
+          : filter.sessionId
+            ? { sessionId: filter.sessionId }
+            : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { id: true, status: true, totalMinor: true, currency: true, createdAt: true },
+    });
+  }
 }

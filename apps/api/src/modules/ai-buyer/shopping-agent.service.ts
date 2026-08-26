@@ -69,6 +69,8 @@ export class ShoppingAgentService {
     this.identifyCustomerTool(),
     this.createOrderTool(),
     this.payOrderTool(),
+    this.getOrderTool(),
+    this.listOrdersTool(),
   ];
 
   private searchProductsTool(): Tool {
@@ -220,6 +222,35 @@ export class ShoppingAgentService {
         // ponytail: tenant scope enforced in PaymentService; this is a local capture, not a real PSP.
         const order = await this.payments.payOrder(ctx.merchantId, orderId, { method, customerId: ctx.customerId });
         return JSON.stringify({ orderId: order.id, status: order.status, totalMinor: order.totalMinor, currency: order.currency });
+      },
+    };
+  }
+
+  private getOrderTool(): Tool {
+    return {
+      name: "get_order",
+      description: "Look up a single order by its id.",
+      parameters: '{ "orderId": string }',
+      execute: async (args, ctx) => {
+        const orderId = String(args.orderId ?? "");
+        if (!orderId) return "Provide the orderId.";
+        const order = await this.orders.getOrder(ctx.merchantId, orderId);
+        return JSON.stringify(order);
+      },
+    };
+  }
+
+  private listOrdersTool(): Tool {
+    return {
+      name: "list_orders",
+      description: "List the customer's recent orders.",
+      parameters: '{ "customerId"?: string, "sessionId"?: string }',
+      execute: async (args, ctx) => {
+        const customerId = typeof args.customerId === "string" ? args.customerId : ctx.customerId;
+        const sessionId = typeof args.sessionId === "string" ? args.sessionId : ctx.sessionId;
+        if (!customerId && !sessionId) return "No customer or session is known yet.";
+        const orders = await this.orders.listOrders(ctx.merchantId, { customerId, sessionId });
+        return JSON.stringify(orders);
       },
     };
   }

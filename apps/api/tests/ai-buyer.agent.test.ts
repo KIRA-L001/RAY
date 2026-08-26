@@ -82,12 +82,20 @@ function fakeConversations() {
 }
 
 function fakeOrders() {
-  const calls: Array<{ merchantId: string; cartId: string; customerId?: string }> = [];
+  const calls: Array<{ kind: string; merchantId: string; arg?: unknown }> = [];
   return {
     calls,
     createFromCart: async (merchantId: string, cartId: string, customerId?: string) => {
-      calls.push({ merchantId, cartId, customerId });
+      calls.push({ kind: "create", merchantId, arg: { cartId, customerId } });
       return { id: "order-1", totalMinor: 9999, currency: "USD", status: "CREATED" };
+    },
+    getOrder: async (merchantId: string, orderId: string) => {
+      calls.push({ kind: "get", merchantId, arg: orderId });
+      return { id: orderId, status: "PAID", totalMinor: 9999, currency: "USD", createdAt: new Date().toISOString(), items: [] };
+    },
+    listOrders: async (merchantId: string, filter: { customerId?: string; sessionId?: string }) => {
+      calls.push({ kind: "list", merchantId, arg: filter });
+      return [{ id: "order-1", status: "PAID", totalMinor: 9999, currency: "USD", createdAt: new Date().toISOString() }];
     },
   };
 }
@@ -215,8 +223,8 @@ test("create_order delegates to OrderService with the resolved merchant scope", 
   const out = await collect(agent, [{ role: "user", content: "checkout" }], ctx);
   assert.ok(out.includes("Order"));
   assert.equal(orders.calls[0]?.merchantId, "m-tenant-a");
-  assert.equal(orders.calls[0]?.cartId, "cart-1");
-  assert.equal(orders.calls[0]?.customerId, "c1");
+  assert.equal((orders.calls[0]?.arg as { cartId: string }).cartId, "cart-1");
+  assert.equal((orders.calls[0]?.arg as { customerId: string }).customerId, "c1");
 });
 
 test("pay_order delegates to PaymentService with the resolved merchant scope", async () => {
@@ -227,4 +235,24 @@ test("pay_order delegates to PaymentService with the resolved merchant scope", a
   assert.equal(payments.calls[0]?.merchantId, "m-tenant-a");
   assert.equal(payments.calls[0]?.orderId, "order-1");
   assert.equal(payments.calls[0]?.customerId, "c1");
+});
+
+test("get_order delegates to OrderService tenant-scoped", async () => {
+  const orders = fakeOrders();
+  const agent = makeAgent(['{"tool":"get_order","args":{"orderId":"order-1"}}', "Here is your order."], { orders: orders as unknown as OrderService });
+  const out = await collect(agent, [{ role: "user", content: "my order?" }], ctx);
+  assert.ok(out.includes("order"));
+  assert.equal(orders.calls[0]?.kind, "get");
+  assert.equal(orders.calls[0]?.merchantId, "m-tenant-a");
+  assert.equal(orders.calls[0]?.arg, "order-1");
+});
+
+test("list_orders delegates using the resolved customer", async () => {
+  const orders = fakeOrders();
+  const agent = makeAgent(['{"tool":"list_orders","args":{}}', "You have 1 order."], { orders: orders as unknown as OrderService });
+  const out = await collect(agent, [{ role: "user", content: "my orders" }], ctx);
+  assert.ok(out.includes("order"));
+  assert.equal(orders.calls[0]?.kind, "list");
+  assert.equal(orders.calls[0]?.merchantId, "m-tenant-a");
+  assert.deepEqual(orders.calls[0]?.arg, { customerId: "c1", sessionId: "s1" });
 });
