@@ -13,6 +13,10 @@ export interface DashboardSummary {
   avgMessagesPerConversation: number;
   topProducts: { productId: string; title: string; unitsSold: number }[];
   newProducts30d: number;
+  cartsTotal: number;
+  convertedCarts: number;
+  cartConversionRate: number;
+  conversationToOrderRate: number;
   revenueMinor: number;
   aiRevenueMinor: number;
   averageOrderValueMinor: number;
@@ -27,7 +31,7 @@ export class DashboardService {
   /** Merchant-scoped summary for the desktop dashboard. Analytics depth is Phase 6 Tasks 64-70. */
   async summary(merchantId: string): Promise<DashboardSummary> {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, newProducts30d, topAgg, paidAgg, aiAgg, aovAgg, byStatus, sample] =
+    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, newProducts30d, cartsTotal, convertedCarts, topAgg, paidAgg, aiAgg, aovAgg, byStatus, sample] =
       await Promise.all([
         this.db.product.count({ where: { merchantId, deletedAt: null } }),
         this.db.order.count({ where: { merchantId } }),
@@ -40,6 +44,8 @@ export class DashboardService {
         this.db.conversation.count({ where: { merchantId, status: "ACTIVE" } }),
         this.db.conversationMessage.count({ where: { conversation: { merchantId } } }),
         this.db.product.count({ where: { merchantId, deletedAt: null, createdAt: { gte: since } } }),
+        this.db.cart.count({ where: { merchantId } }),
+        this.db.cart.count({ where: { merchantId, status: "CONVERTED" } }),
         // Top-selling products by units from paid orders.
         this.db.orderItem.groupBy({
           by: ["productId"],
@@ -93,6 +99,10 @@ export class DashboardService {
       avgMessagesPerConversation: conversations ? Math.round((totalMessages / conversations) * 10) / 10 : 0,
       topProducts,
       newProducts30d,
+      cartsTotal,
+      convertedCarts,
+      cartConversionRate: cartsTotal ? Math.round((convertedCarts / cartsTotal) * 1000) / 1000 : 0,
+      conversationToOrderRate: conversations ? Math.round((orders / conversations) * 1000) / 1000 : 0,
       revenueMinor: paidAgg._sum.totalMinor ?? 0,
       aiRevenueMinor: aiAgg._sum.totalMinor ?? 0,
       averageOrderValueMinor: Math.round(aovAgg._avg.totalMinor ?? 0),
