@@ -9,6 +9,24 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    services:
+      # ponytail: CI needs a real Postgres for DB-backed integration tests; the
+      # api integration test skips itself when DATABASE_URL is absent.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ray
+          POSTGRES_PASSWORD: ray
+          POSTGRES_DB: ray
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ray"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://ray:ray@localhost:5432/ray?schema=public
     steps:
       - uses: actions/checkout@v4
 
@@ -24,6 +42,9 @@ jobs:
 
       - name: Generate Prisma client
         run: pnpm exec prisma generate
+
+      - name: Apply database migrations
+        run: pnpm exec prisma migrate deploy
 
       - name: Typecheck
         run: pnpm typecheck

@@ -17,7 +17,10 @@ function parseNdjson(body: string): Array<Record<string, unknown>> {
     .map((l) => JSON.parse(l));
 }
 
-test("buyer chat stream resolves merchant from siteKey, persists messages, streams NDJSON", async () => {
+// Skips when no database is configured so local `pnpm test` without infra stays green.
+const dbConfigured = Boolean(process.env.DATABASE_URL);
+
+test("buyer chat stream resolves merchant from siteKey, persists messages, streams NDJSON", { skip: !dbConfigured }, async () => {
   const db = getDb();
   const merchant = await db.merchant.create({
     data: { id: `merchant_${randomUUID().replace(/-/g, "").slice(0, 20)}`, name: "Test Merchant", slug: `test-${randomUUID().slice(0, 8)}` },
@@ -70,7 +73,7 @@ test("buyer chat stream resolves merchant from siteKey, persists messages, strea
   }
 });
 
-test("buyer chat rejects a conversationId that belongs to another merchant", async () => {
+test("buyer chat rejects a conversationId that belongs to another merchant", { skip: !dbConfigured }, async () => {
   const db = getDb();
   const m1 = await db.merchant.create({ data: { id: `merchant_${randomUUID().slice(0, 20)}`, name: "M1", slug: `m1-${randomUUID().slice(0, 8)}` } });
   const m2 = await db.merchant.create({ data: { id: `merchant_${randomUUID().slice(0, 20)}`, name: "M2", slug: `m2-${randomUUID().slice(0, 8)}` } });
