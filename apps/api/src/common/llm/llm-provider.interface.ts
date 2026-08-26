@@ -11,10 +11,8 @@ export interface LLMProvider {
 
 export const LLM_PROVIDER = Symbol("LLM_PROVIDER");
 
-// ponytail: no real provider is implemented yet (Task 44). This mock is the
-// minimum stub that lets the streaming transport be exercised end-to-end; it
-// streams deterministic text and must be replaced by OpenAI/Anthropic/Gemini
-// providers before any production traffic.
+// ponytail: dev fallback used when LLM_PROVIDER is unset/absent (no API key).
+// Real streaming providers live in llm-providers.ts; swap via LLM_PROVIDER env.
 export class MockLLMProvider implements LLMProvider {
   async *streamChat(params: {
     messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string }>;
