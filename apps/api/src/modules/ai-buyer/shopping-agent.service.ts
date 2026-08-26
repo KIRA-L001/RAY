@@ -5,6 +5,7 @@ import { CartService, type CartItemInput } from "../cart/cart.service";
 import { EventsService } from "../events/events.service";
 import { ConversationsService } from "../conversations/conversations.service";
 import { OrderService } from "../orders/order.service";
+import { PaymentService } from "../payments/payment.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -55,6 +56,7 @@ export class ShoppingAgentService {
     @Inject(EventsService) private readonly events: EventsService,
     @Inject(ConversationsService) private readonly conversations: ConversationsService,
     @Inject(OrderService) private readonly orders: OrderService,
+    @Inject(PaymentService) private readonly payments: PaymentService,
   ) {}
 
   private readonly tools: Tool[] = [
@@ -66,6 +68,7 @@ export class ShoppingAgentService {
     this.updateCartItemTool(),
     this.identifyCustomerTool(),
     this.createOrderTool(),
+    this.payOrderTool(),
   ];
 
   private searchProductsTool(): Tool {
@@ -201,6 +204,22 @@ export class ShoppingAgentService {
         // ponytail: tenant scope enforced in OrderService; payment is a later step (status stays CREATED).
         const order = await this.orders.createFromCart(ctx.merchantId, cartId, ctx.customerId);
         return JSON.stringify({ orderId: order.id, totalMinor: order.totalMinor, currency: order.currency, status: order.status });
+      },
+    };
+  }
+
+  private payOrderTool(): Tool {
+    return {
+      name: "pay_order",
+      description: "Pay for an order to complete the purchase.",
+      parameters: '{ "orderId": string, "method"?: string }',
+      execute: async (args, ctx) => {
+        const orderId = String(args.orderId ?? "");
+        if (!orderId) return "Provide the orderId.";
+        const method = typeof args.method === "string" ? args.method : undefined;
+        // ponytail: tenant scope enforced in PaymentService; this is a local capture, not a real PSP.
+        const order = await this.payments.payOrder(ctx.merchantId, orderId, { method, customerId: ctx.customerId });
+        return JSON.stringify({ orderId: order.id, status: order.status, totalMinor: order.totalMinor, currency: order.currency });
       },
     };
   }

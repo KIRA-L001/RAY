@@ -8,6 +8,7 @@ import type { CartService } from "../src/modules/cart/cart.service";
 import type { EventsService } from "../src/modules/events/events.service";
 import type { ConversationsService } from "../src/modules/conversations/conversations.service";
 import type { OrderService } from "../src/modules/orders/order.service";
+import type { PaymentService } from "../src/modules/payments/payment.service";
 
 function fakeLlm(scripted: string[]): LLMProvider {
   let i = 0;
@@ -91,12 +92,24 @@ function fakeOrders() {
   };
 }
 
+function fakePayments() {
+  const calls: Array<{ merchantId: string; orderId: string; customerId?: string }> = [];
+  return {
+    calls,
+    payOrder: async (merchantId: string, orderId: string, opts?: { method?: string; customerId?: string }) => {
+      calls.push({ merchantId, orderId, customerId: opts?.customerId });
+      return { id: orderId, status: "PAID", totalMinor: 9999, currency: "USD" };
+    },
+  };
+}
+
 interface Overrides {
   catalog?: CatalogService;
   cart?: CartService;
   events?: EventsService;
   conversations?: ConversationsService;
   orders?: OrderService;
+  payments?: PaymentService;
 }
 
 function makeAgent(scripted: string[], o: Overrides = {}) {
@@ -107,6 +120,7 @@ function makeAgent(scripted: string[], o: Overrides = {}) {
     o.events ?? (fakeEvents() as unknown as EventsService),
     o.conversations ?? (fakeConversations() as unknown as ConversationsService),
     o.orders ?? (fakeOrders() as unknown as OrderService),
+    o.payments ?? (fakePayments() as unknown as PaymentService),
   );
 }
 
@@ -203,4 +217,14 @@ test("create_order delegates to OrderService with the resolved merchant scope", 
   assert.equal(orders.calls[0]?.merchantId, "m-tenant-a");
   assert.equal(orders.calls[0]?.cartId, "cart-1");
   assert.equal(orders.calls[0]?.customerId, "c1");
+});
+
+test("pay_order delegates to PaymentService with the resolved merchant scope", async () => {
+  const payments = fakePayments();
+  const agent = makeAgent(['{"tool":"pay_order","args":{"orderId":"order-1"}}', "Paid! Thank you."], { payments: payments as unknown as PaymentService });
+  const out = await collect(agent, [{ role: "user", content: "pay now" }], ctx);
+  assert.ok(out.includes("Paid"));
+  assert.equal(payments.calls[0]?.merchantId, "m-tenant-a");
+  assert.equal(payments.calls[0]?.orderId, "order-1");
+  assert.equal(payments.calls[0]?.customerId, "c1");
 });
