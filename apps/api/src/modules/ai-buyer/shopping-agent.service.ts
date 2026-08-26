@@ -46,6 +46,28 @@ function toCartItems(raw: unknown): CartItemInput[] {
   });
 }
 
+// ponytail: hardening gate. Centralized input sanitization for every tool call so a
+// buggy/malicious model can't push oversized or malformed args. Numeric bounds are
+// coarse; tighten per-tool once a real schema validator is added.
+export function sanitizeArgs(args: unknown): Record<string, unknown> {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    throw new Error("tool args must be an object");
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args as Record<string, unknown>)) {
+    if (typeof value === "string") {
+      out[key] = value.slice(0, 500);
+    } else if (typeof value === "number") {
+      if (key === "limit") out[key] = Math.min(Math.max(Math.trunc(value), 1), 50);
+      else if (key === "quantity") out[key] = Math.min(Math.max(Math.trunc(value), 0), 100);
+      else out[key] = value;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 const SYSTEM_PROMPT = `You are RAY, a shopping assistant for an online store. Help the customer find products and refine their request. Never invent products, prices, or payments. Be concise and friendly.
 When you need to look up the catalog, reply with ONLY a JSON object of the form {"tool":"<name>","args":{...}} and nothing else. Otherwise answer the customer in natural language.`;
 
@@ -292,15 +314,33 @@ export class ShoppingAgentService {
       const started = Date.now();
       let status: "SUCCESS" | "ERROR" = "SUCCESS";
       let errorCode: string | null = null;
+      let safeArgs: Record<string, unknown>;
+      try {
+        safeArgs = sanitizeArgs(call.args);
+      } catch {
+        if (agentRunId) {
+          await this.runtime.logToolCall({
+            agentRunId,
+            toolName: call.tool.name,
+            args: call.args as Json,
+            result: "invalid arguments",
+            status: "ERROR",
+            durationMs: Date.now() - started,
+            errorCode: "INVALID_ARGS",
+          });
+        }
+        messages.push({ role: "user", content: `Tool result (${call.tool.name}): invalid arguments` });
+        continue;
+      }
       // Policy gate (doc #16): LLM output is never authorization. Deny before the tool runs.
-      const decision = await this.policy.authorize(call.tool.name, call.args as Record<string, unknown>);
+      const decision = await this.policy.authorize(call.tool.name, safeArgs);
       if (!decision.allowed) {
         result = `Action denied by policy: ${decision.reason ?? "not permitted"}`;
         status = "ERROR";
         errorCode = "POLICY_DENIED";
       } else {
         try {
-          result = await call.tool.execute(call.args, ctx);
+          result = await call.tool.execute(safeArgs, ctx);
         } catch (err) {
           result = `Tool error: ${err instanceof Error ? err.message : "failed"}`;
           status = "ERROR";
@@ -313,7 +353,7 @@ export class ShoppingAgentService {
         await this.runtime.logToolCall({
           agentRunId,
           toolName: call.tool.name,
-          args: call.args as Json,
+          args: safeArgs as Json,
           result,
           status,
           durationMs: Date.now() - started,
