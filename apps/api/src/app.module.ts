@@ -12,6 +12,7 @@ import { StorefrontModule } from "./modules/storefront/storefront.module";
 import { WebsitesModule } from "./modules/websites/websites.module";
 import { CategoriesModule } from "./modules/categories/categories.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
+import { PaymentsModule } from "./modules/payments/payment.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ConversationsModule } from "./modules/conversations/conversations.module";
 import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
@@ -37,6 +38,7 @@ import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
     WebsitesModule,
     CategoriesModule,
     CatalogModule,
+    PaymentsModule,
     EventsModule,
     ConversationsModule,
     AiBuyerModule,

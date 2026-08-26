@@ -19,6 +19,15 @@ async function bootstrap(): Promise<void> {
     bodyLimit: 1_048_576,
     genReqId: () => randomUUID(),
   });
+  // ponytail: stash the raw bytes so webhook HMAC uses exact payload (re-parsed JSON would mismatch).
+  adapter.getInstance().addContentTypeParser("application/json", { parseAs: "buffer" }, (req, body, done) => {
+    (req as { rawBody?: Buffer }).rawBody = body as Buffer;
+    try {
+      done(null, JSON.parse(body.toString("utf8")));
+    } catch (err) {
+      done(err as Error);
+    }
+  });
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
     bufferLogs: true,
   });

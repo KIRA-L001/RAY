@@ -4,6 +4,14 @@ import { newId } from "@ray/types";
 import { AppException } from "../../common/errors/app.exception";
 import { RAZORPAY_ADAPTER, type RazorpayAdapter } from "./razorpay.adapter";
 
+export interface RazorpayWebhookBody {
+  event?: string;
+  payload?: {
+    payment?: { entity?: { order_id?: string; id?: string } };
+    order?: { entity?: { id?: string } };
+  };
+}
+
 @Injectable()
 export class PaymentService {
   private readonly db = getDb();
@@ -103,5 +111,24 @@ export class PaymentService {
       select: { id: true, status: true, totalMinor: true, currency: true },
     });
     return updated;
+  }
+
+  /** Razorpay webhook entry point. Verifies the signature upstream, then confirms capture. */
+  async handleRazorpayWebhook(event: RazorpayWebhookBody): Promise<{ ok: boolean }> {
+    const rzOrderId = event?.payload?.payment?.entity?.order_id ?? event?.payload?.order?.entity?.id;
+    if (!rzOrderId) return { ok: false };
+    await this.confirmRazorpayOrder(rzOrderId);
+    return { ok: true };
+  }
+
+  /** Mark the payment + order paid by Razorpay order id. Idempotent across webhook retries. */
+  async confirmRazorpayOrder(razorpayOrderId: string): Promise<void> {
+    const payment = await this.db.payment.findFirst({
+      where: { razorpayOrderId },
+      select: { id: true, merchantId: true, orderId: true, state: true },
+    });
+    if (!payment || payment.state === "CAPTURED") return;
+    await this.db.payment.update({ where: { id: payment.id }, data: { state: "CAPTURED", capturedAt: new Date() } });
+    await this.db.order.update({ where: { id: payment.orderId, merchantId: payment.merchantId }, data: { status: "PAID" } });
   }
 }
