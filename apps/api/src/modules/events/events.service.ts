@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { getDb } from "@ray/database";
+import { getDb, type Json } from "@ray/database";
 import type { ValidatedEvent } from "./events.schema";
 import { AppException } from "../../common/errors/app.exception";
 import { WebsitesService } from "../websites/websites.service";
@@ -60,7 +60,7 @@ export class EventsService {
           eventType: e.eventType,
           source: e.source,
           schemaVersion: e.schemaVersion,
-          data: e.data,
+          data: e.data as Json,
           occurredAt: new Date(e.timestamp),
         })),
         skipDuplicates: true,

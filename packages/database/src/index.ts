@@ -1,7 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../../generated/prisma/client.ts";
+import type { InputJsonValue } from "../../../generated/prisma/internal/prismaNamespace.ts";
 
 export type Db = PrismaClient;
+export type Json = InputJsonValue;
 
 let instance: PrismaClient | undefined;
 

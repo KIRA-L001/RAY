@@ -10,6 +10,7 @@ import helmet from "@fastify/helmet";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { Logger } from "nestjs-pino";
+import type { FastifyRequest } from "fastify";
 import { AppModule } from "./app.module";
 
 async function bootstrap(): Promise<void> {
@@ -30,7 +31,7 @@ async function bootstrap(): Promise<void> {
   // Per-request CORS: strict credential allowlist for first-party apps;
   // /v1/events reflects any origin without credentials (public browser sensor).
   await app.register(cors, {
-    delegator: async (req) => {
+    delegator: async (req: FastifyRequest) => {
       if (req.url.startsWith("/v1/events")) {
         return {
           origin: req.headers.origin ?? "*",
