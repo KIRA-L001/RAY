@@ -9,7 +9,7 @@ test("dashboard endpoint delegates to the service scoped by merchantId", async (
   const service = {
     summary: async (merchantId: string) => {
       calls.push(merchantId);
-      return { products: 1, orders: 2, customers: 3, newCustomers30d: 1, identifiedCustomers: 2, conversations: 4, activeConversations: 2, totalMessages: 10, avgMessagesPerConversation: 2.5, topProducts: [], newProducts30d: 1, cartsTotal: 5, convertedCarts: 1, cartConversionRate: 0.2, conversationToOrderRate: 0.5, revenueMinor: 500, aiRevenueMinor: 200, averageOrderValueMinor: 250, ordersByStatus: { PAID: 1, CREATED: 1 }, currency: "INR" };
+      return { products: 1, orders: 2, customers: 3, newCustomers30d: 1, identifiedCustomers: 2, conversations: 4, activeConversations: 2, totalMessages: 10, avgMessagesPerConversation: 2.5, topProducts: [], newProducts30d: 1, cartsTotal: 5, convertedCarts: 1, cartConversionRate: 0.2, conversationToOrderRate: 0.5, abandonedCarts: 1, recoverableRevenueMinor: 150, revenueMinor: 500, aiRevenueMinor: 200, averageOrderValueMinor: 250, ordersByStatus: { PAID: 1, CREATED: 1 }, currency: "INR" };
     },
   } as unknown as DashboardService;
   const controller = new DashboardController(service);

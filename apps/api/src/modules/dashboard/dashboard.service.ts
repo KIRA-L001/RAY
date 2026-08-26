@@ -17,6 +17,8 @@ export interface DashboardSummary {
   convertedCarts: number;
   cartConversionRate: number;
   conversationToOrderRate: number;
+  abandonedCarts: number;
+  recoverableRevenueMinor: number;
   revenueMinor: number;
   aiRevenueMinor: number;
   averageOrderValueMinor: number;
@@ -31,7 +33,7 @@ export class DashboardService {
   /** Merchant-scoped summary for the desktop dashboard. Analytics depth is Phase 6 Tasks 64-70. */
   async summary(merchantId: string): Promise<DashboardSummary> {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, newProducts30d, cartsTotal, convertedCarts, topAgg, paidAgg, aiAgg, aovAgg, byStatus, sample] =
+    const [products, orders, customers, newCustomers30d, identifiedCustomers, conversations, activeConversations, totalMessages, newProducts30d, cartsTotal, convertedCarts, abandonedCarts, abandonedItems, topAgg, paidAgg, aiAgg, aovAgg, byStatus, sample] =
       await Promise.all([
         this.db.product.count({ where: { merchantId, deletedAt: null } }),
         this.db.order.count({ where: { merchantId } }),
@@ -46,6 +48,12 @@ export class DashboardService {
         this.db.product.count({ where: { merchantId, deletedAt: null, createdAt: { gte: since } } }),
         this.db.cart.count({ where: { merchantId } }),
         this.db.cart.count({ where: { merchantId, status: "CONVERTED" } }),
+        this.db.cart.count({ where: { merchantId, status: "ABANDONED" } }),
+        // ponytail: recoverable revenue = value of abandoned carts; JS reduce over rows is fine at dashboard scale.
+        this.db.cartItem.findMany({
+          where: { cart: { merchantId, status: "ABANDONED" } },
+          select: { quantity: true, unitPriceMinor: true },
+        }),
         // Top-selling products by units from paid orders.
         this.db.orderItem.groupBy({
           by: ["productId"],
@@ -103,6 +111,8 @@ export class DashboardService {
       convertedCarts,
       cartConversionRate: cartsTotal ? Math.round((convertedCarts / cartsTotal) * 1000) / 1000 : 0,
       conversationToOrderRate: conversations ? Math.round((orders / conversations) * 1000) / 1000 : 0,
+      abandonedCarts,
+      recoverableRevenueMinor: abandonedItems.reduce((sum, it) => sum + it.unitPriceMinor * it.quantity, 0),
       revenueMinor: paidAgg._sum.totalMinor ?? 0,
       aiRevenueMinor: aiAgg._sum.totalMinor ?? 0,
       averageOrderValueMinor: Math.round(aovAgg._avg.totalMinor ?? 0),
