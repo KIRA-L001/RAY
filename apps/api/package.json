@@ -8,7 +8,7 @@
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "echo \"no tests yet\" && exit 0"
+    "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

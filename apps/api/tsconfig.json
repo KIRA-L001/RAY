@@ -9,5 +9,5 @@
     "experimentalDecorators": true,
     "incremental": false
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }

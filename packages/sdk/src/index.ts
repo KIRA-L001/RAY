@@ -25,8 +25,13 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 /** Reads/writes a storage-backed id, generating it on first use.
  * Falls back to a fresh in-memory id when storage is blocked
  * (iframes, privacy settings) — the sensor must never throw. */
-function storedId(storage: Storage | undefined, key: string, maxAgeMs?: number): string {
-  const fresh = crypto.randomUUID();
+function storedId(
+  storage: Storage | undefined,
+  key: string,
+  prefix: string,
+  maxAgeMs?: number,
+): string {
+  const fresh = `${prefix}${crypto.randomUUID()}`;
   if (!storage) return fresh;
   try {
     const raw = storage.getItem(key);
@@ -53,12 +58,12 @@ export function createRay(config: RayConfig) {
   const queue: EventEnvelope[] = [];
   // ponytail: localStorage/sessionStorage only; no cross-subdomain cookie id — add if merchants use multiple subdomains
   const anonymousId =
-    config.anonymousId ?? storedId(globalThis.localStorage, "ray:anon");
-  let sessionId = config.sessionId ?? storedId(globalThis.sessionStorage, "ray:sess", SESSION_TIMEOUT_MS);
+    config.anonymousId ?? storedId(globalThis.localStorage, "ray:anon", "anon_");
+  let sessionId = config.sessionId ?? storedId(globalThis.sessionStorage, "ray:sess", "sess_", SESSION_TIMEOUT_MS);
 
   function envelope(eventType: SdkEventType, sessionId: string, data: Record<string, unknown>): EventEnvelope {
     return {
-      eventId: crypto.randomUUID(),
+      eventId: `evt_${crypto.randomUUID()}`,
       eventType,
       merchantId: null,
       websiteId: config.websiteId,
@@ -92,7 +97,7 @@ export function createRay(config: RayConfig) {
     // ponytail: rotation is evaluated on access, not by a timer — a page idle
     // >30min rotates lazily at next event/access instead of precisely at expiry
     if (!config.sessionId) {
-      sessionId = storedId(globalThis.sessionStorage, "ray:sess", SESSION_TIMEOUT_MS);
+      sessionId = storedId(globalThis.sessionStorage, "ray:sess", "sess_", SESSION_TIMEOUT_MS);
     }
     return sessionId;
   }
