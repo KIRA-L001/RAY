@@ -80,6 +80,25 @@ export class CatalogService {
     }));
   }
 
+  /** Tenant-scoped product lookup by id (used by the AI buyer get_product tool). */
+  async getProduct(merchantId: string, id: string) {
+    return this.db.product.findUnique({
+      where: { id, merchantId },
+      select: {
+        id: true,
+        name: true,
+        brand: true,
+        priceMinor: true,
+        currency: true,
+        description: true,
+        sourceUrl: true,
+        status: true,
+        variants: { where: { deletedAt: null }, select: { id: true, name: true, available: true, priceMinor: true } },
+        images: { orderBy: { position: "asc" }, select: { url: true, alt: true } },
+      },
+    });
+  }
+
   /** Re-triggers the crawl pipeline; only for non-deleted, owned websites. */
   async triggerRecrawl(merchantId: string, websiteId: string): Promise<void> {
     const website = await this.db.website.findFirst({

@@ -14,14 +14,14 @@ export class AiBuyerController {
   @Header("content-type", "application/x-ndjson; charset=utf-8")
   @Header("cache-control", "no-store")
   @Header("x-accel-buffering", "no")
-  async stream(@Body(new ZodValidationPipe(chatStreamSchema)) body: ChatStreamInput): Promise<Readable> {
+  async stream(@Body(new ZodValidationPipe(chatStreamSchema)) body: ChatStreamInput  ): Promise<Readable> {
     // Tenant/auth errors surface as normal HTTP errors before we start streaming.
-    const { conversationId, messages } = await this.service.prepare(body);
+    const { conversationId, messages, ctx } = await this.service.prepare(body);
 
     const service = this.service;
     return Readable.from(
       (async function* () {
-        for await (const event of service.streamReply(conversationId, messages)) {
+        for await (const event of service.streamReply(conversationId, messages, ctx)) {
           yield JSON.stringify(event) + "\n";
         }
       })(),

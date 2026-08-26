@@ -1,34 +1,31 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { getDb } from "@ray/database";
 import { AppException } from "../../common/errors/app.exception";
-import { LLM_PROVIDER, type LLMProvider } from "../../common/llm/llm-provider.interface";
 import { ConversationsService } from "../conversations/conversations.service";
+import { ShoppingAgentService, type AgentMessage, type ToolContext } from "./shopping-agent.service";
 import type { ChatStreamEvent, ChatStreamInput } from "./ai-buyer.dto";
 
 // tsx/esbuild does not emit decorator metadata, so all injected deps use explicit @Inject.
-
-const SYSTEM_PROMPT =
-  "You are RAY, a shopping assistant for an online store. Help the customer " +
-  "discover products and refine their request. Never invent orders, prices, or " +
-  "payments. Be concise.";
 
 @Injectable()
 export class AiBuyerService {
   private readonly db = getDb();
 
+  // tsx/esbuild does not emit decorator metadata, so injected deps use explicit @Inject.
   constructor(
-    @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
     @Inject(ConversationsService) private readonly conversations: ConversationsService,
+    @Inject(ShoppingAgentService) private readonly agent: ShoppingAgentService,
   ) {}
 
   /**
    * Resolve the merchant scope from the (client-safe) public site key, enforce
-   * conversation tenant isolation, persist the user turn, and build the LLM prompt.
+   * conversation tenant isolation, persist the user turn, and load history.
    * Any auth/tenant error here returns a normal HTTP error before streaming starts.
    */
   async prepare(input: ChatStreamInput): Promise<{
     conversationId: string;
-    messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string }>;
+    messages: AgentMessage[];
+    ctx: ToolContext;
   }> {
     // Tenant boundary: merchantId is derived server-side, never trusted from the client.
     const website = await this.db.website.findUnique({
@@ -58,20 +55,21 @@ export class AiBuyerService {
     await this.conversations.appendMessage(conversationId, "USER", input.message);
 
     const history = await this.conversations.history(conversationId);
-    const messages = [
-      { role: "system" as const, content: SYSTEM_PROMPT },
-      ...history.map((m) => ({ role: m.role.toLowerCase() as "user" | "assistant" | "system", content: m.content })),
-    ];
-    return { conversationId, messages };
+    const messages: AgentMessage[] = history.map((m) => ({
+      role: m.role.toLowerCase() as AgentMessage["role"],
+      content: m.content,
+    }));
+    return { conversationId, messages, ctx: { merchantId, customerId: input.customerId, sessionId: input.sessionId } };
   }
 
-  /** Stream the assistant reply as NDJSON events and persist the final message. */
+  /** Run the shopping agent and stream the final answer as NDJSON events; persist the assistant message. */
   async *streamReply(
     conversationId: string,
-    messages: Array<{ role: "user" | "assistant" | "system" | "tool"; content: string }>,
+    messages: AgentMessage[],
+    ctx: ToolContext,
   ): AsyncGenerator<ChatStreamEvent> {
     let assistantText = "";
-    for await (const delta of this.llm.streamChat({ messages })) {
+    for await (const delta of this.agent.run(messages, ctx)) {
       assistantText += delta;
       yield { type: "delta", text: delta };
     }
