@@ -11,9 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       # ponytail: CI needs a real Postgres for DB-backed integration tests; the
-      # api integration test skips itself when DATABASE_URL is absent.
+      # api integration test skips itself when DATABASE_URL is absent. The schema
+      # uses the pgvector extension, so the pgvector image is required.
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:0.8.0-pg16
         env:
           POSTGRES_USER: ray
           POSTGRES_PASSWORD: ray
