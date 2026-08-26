@@ -14,6 +14,7 @@ import { CategoriesModule } from "./modules/categories/categories.module";
 import { CatalogModule } from "./modules/catalog/catalog.module";
 import { PaymentsModule } from "./modules/payments/payment.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { AgentsModule } from "./modules/agents/agents.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ConversationsModule } from "./modules/conversations/conversations.module";
 import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
@@ -41,6 +42,7 @@ import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
     CatalogModule,
     PaymentsModule,
     DashboardModule,
+    AgentsModule,
     EventsModule,
     ConversationsModule,
     AiBuyerModule,
