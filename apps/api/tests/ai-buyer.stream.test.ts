@@ -66,6 +66,7 @@ test("buyer chat stream resolves merchant from siteKey, persists messages, strea
     assert.ok((messages[1]!.content as string).includes("RAY"));
   } finally {
     await app.close();
+    await db.agentRun.deleteMany({ where: { merchantId: merchant.id } });
     await db.conversationMessage.deleteMany({ where: { conversationId: { startsWith: "conv_" } } });
     await db.conversation.deleteMany({ where: { merchantId: merchant.id } });
     await db.website.deleteMany({ where: { id: website.id } });

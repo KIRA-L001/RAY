@@ -9,10 +9,11 @@ import { PaymentsModule } from "../payments/payment.module";
 import { AiBuyerController } from "./ai-buyer.controller";
 import { AiBuyerService } from "./ai-buyer.service";
 import { ShoppingAgentService } from "./shopping-agent.service";
+import { AgentRuntimeService } from "./agent-runtime.service";
 
 @Module({
   imports: [ConversationsModule, LlmModule, CatalogModule, CartModule, EventsModule, OrdersModule, PaymentsModule],
   controllers: [AiBuyerController],
-  providers: [AiBuyerService, ShoppingAgentService],
+  providers: [AiBuyerService, ShoppingAgentService, AgentRuntimeService],
 })
 export class AiBuyerModule {}

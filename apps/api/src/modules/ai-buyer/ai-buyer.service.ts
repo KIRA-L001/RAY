@@ -3,6 +3,7 @@ import { getDb } from "@ray/database";
 import { AppException } from "../../common/errors/app.exception";
 import { ConversationsService } from "../conversations/conversations.service";
 import { ShoppingAgentService, type AgentMessage, type ToolContext } from "./shopping-agent.service";
+import { AgentRuntimeService } from "./agent-runtime.service";
 import type { ChatStreamEvent, ChatStreamInput } from "./ai-buyer.dto";
 
 // tsx/esbuild does not emit decorator metadata, so all injected deps use explicit @Inject.
@@ -15,6 +16,7 @@ export class AiBuyerService {
   constructor(
     @Inject(ConversationsService) private readonly conversations: ConversationsService,
     @Inject(ShoppingAgentService) private readonly agent: ShoppingAgentService,
+    @Inject(AgentRuntimeService) private readonly runtime: AgentRuntimeService,
   ) {}
 
   /**
@@ -80,12 +82,19 @@ export class AiBuyerService {
     messages: AgentMessage[],
     ctx: ToolContext,
   ): AsyncGenerator<ChatStreamEvent> {
-    let assistantText = "";
-    for await (const delta of this.agent.run(messages, ctx)) {
-      assistantText += delta;
-      yield { type: "delta", text: delta };
+    const runId = await this.runtime.start("SHOPPING", ctx);
+    try {
+      let assistantText = "";
+      for await (const delta of this.agent.run(messages, ctx)) {
+        assistantText += delta;
+        yield { type: "delta", text: delta };
+      }
+      await this.conversations.appendMessage(conversationId, "ASSISTANT", assistantText);
+      await this.runtime.finish(runId, "SUCCEEDED");
+      yield { type: "done", conversationId };
+    } catch (err) {
+      await this.runtime.finish(runId, "FAILED");
+      throw err;
     }
-    await this.conversations.appendMessage(conversationId, "ASSISTANT", assistantText);
-    yield { type: "done", conversationId };
   }
 }
