@@ -7,5 +7,6 @@ import { WebsitesModule } from "../websites/websites.module";
   imports: [WebsitesModule],
   controllers: [EventsController],
   providers: [EventsService],
+  exports: [EventsService],
 })
 export class EventsModule {}

@@ -38,6 +38,11 @@ export class ConversationsService {
     return conversation;
   }
 
+  /** Attach a resolved customer to a conversation so later carts/orders attribute correctly. */
+  async linkCustomer(conversationId: string, customerId: string) {
+    await this.db.conversation.update({ where: { id: conversationId }, data: { customerId } });
+  }
+
   async appendMessage(
     conversationId: string,
     role: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL",

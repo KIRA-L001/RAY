@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { LLM_PROVIDER, type LLMProvider } from "../../common/llm/llm-provider.interface";
 import { CatalogService } from "../catalog/catalog.service";
 import { CartService, type CartItemInput } from "../cart/cart.service";
+import { EventsService } from "../events/events.service";
+import { ConversationsService } from "../conversations/conversations.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -11,6 +13,7 @@ export interface ToolContext {
   merchantId: string;
   customerId?: string;
   sessionId?: string;
+  conversationId?: string;
 }
 
 export interface Tool {
@@ -48,6 +51,8 @@ export class ShoppingAgentService {
     @Inject(LLM_PROVIDER) private readonly llm: LLMProvider,
     @Inject(CatalogService) private readonly catalog: CatalogService,
     @Inject(CartService) private readonly cart: CartService,
+    @Inject(EventsService) private readonly events: EventsService,
+    @Inject(ConversationsService) private readonly conversations: ConversationsService,
   ) {}
 
   private readonly tools: Tool[] = [
@@ -57,6 +62,7 @@ export class ShoppingAgentService {
     this.createCartTool(),
     this.addToCartTool(),
     this.updateCartItemTool(),
+    this.identifyCustomerTool(),
   ];
 
   private searchProductsTool(): Tool {
@@ -159,6 +165,24 @@ export class ShoppingAgentService {
         if (!cartId || !itemId) return "Provide cartId and itemId.";
         const cart = await this.cart.updateItem({ merchantId: ctx.merchantId, cartId, itemId, quantity });
         return JSON.stringify({ cartId: cart.id, itemCount: cart.items.length });
+      },
+    };
+  }
+
+  private identifyCustomerTool(): Tool {
+    return {
+      name: "identify_customer",
+      description: "Record the customer's identity (email and/or phone and/or name) to attribute their cart and orders.",
+      parameters: '{ "email"?: string, "phone"?: string, "name"?: string }',
+      execute: async (args, ctx) => {
+        const email = typeof args.email === "string" ? args.email : undefined;
+        const phone = typeof args.phone === "string" ? args.phone : undefined;
+        const name = typeof args.name === "string" ? args.name : undefined;
+        if (!email && !phone && !name) return "Provide an email, phone, or name to identify the customer.";
+        // ponytail: identity resolution is the single tenant-scoped source of truth (EventsService.upsertCustomer).
+        const customerId = await this.events.upsertCustomer(ctx.merchantId, { email, phone, name });
+        if (ctx.conversationId) await this.conversations.linkCustomer(ctx.conversationId, customerId);
+        return JSON.stringify({ customerId });
       },
     };
   }

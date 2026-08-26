@@ -41,16 +41,22 @@ export class AiBuyerService {
     const merchantId = website.merchantId;
 
     // conversationId is validated to belong to this merchant (tenant isolation).
-    const conversationId = input.conversationId
-      ? (await this.conversations.getForMerchant(merchantId, input.conversationId)).id
-      : (
-          await this.conversations.create({
-            merchantId,
-            sessionId: input.sessionId,
-            customerId: input.customerId,
-            channel: "BUYER",
-          })
-        ).id;
+    let conversationId: string;
+    let existingCustomerId: string | null = null;
+    if (input.conversationId) {
+      const conv = await this.conversations.getForMerchant(merchantId, input.conversationId);
+      conversationId = conv.id;
+      existingCustomerId = conv.customerId;
+    } else {
+      conversationId = (
+        await this.conversations.create({
+          merchantId,
+          sessionId: input.sessionId,
+          customerId: input.customerId,
+          channel: "BUYER",
+        })
+      ).id;
+    }
 
     await this.conversations.appendMessage(conversationId, "USER", input.message);
 
@@ -59,7 +65,13 @@ export class AiBuyerService {
       role: m.role.toLowerCase() as AgentMessage["role"],
       content: m.content,
     }));
-    return { conversationId, messages, ctx: { merchantId, customerId: input.customerId, sessionId: input.sessionId } };
+    // ponytail: re-identified customers persist to the conversation, so the next request's
+    // ctx.customerId is re-derived from the conversation record. The in-flight ctx is unchanged.
+    return {
+      conversationId,
+      messages,
+      ctx: { merchantId, customerId: input.customerId ?? existingCustomerId ?? undefined, sessionId: input.sessionId, conversationId },
+    };
   }
 
   /** Run the shopping agent and stream the final answer as NDJSON events; persist the assistant message. */

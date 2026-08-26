@@ -17,7 +17,7 @@ export class EventsService {
    * from explicit props. Explicit customerId wins; then email/phone match;
    * otherwise create. Never infers identity from browser data.
    */
-  private async resolveCustomer(merchantId: string, props: IdentifyData): Promise<string> {
+  async upsertCustomer(merchantId: string, props: IdentifyData): Promise<string> {
     let customer = props.customerId
       ? await this.db.customer.findFirst({ where: { id: props.customerId, merchantId, deletedAt: null } })
       : null;
@@ -91,7 +91,7 @@ export class EventsService {
       if (e.eventType !== "customer_identified") continue;
       const parsed = identifyDataSchema.safeParse(e.data);
       if (!parsed.success) continue;
-      const customerId = await this.resolveCustomer(site.merchantId, parsed.data);
+      const customerId = await this.upsertCustomer(site.merchantId, parsed.data);
       customerIdByEvent.set(e.eventId, customerId);
       e.data = { customerId };
     }
