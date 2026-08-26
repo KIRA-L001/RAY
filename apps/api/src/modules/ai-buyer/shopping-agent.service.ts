@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { LLM_PROVIDER, type LLMProvider } from "../../common/llm/llm-provider.interface";
 import { CatalogService } from "../catalog/catalog.service";
-import { CartService } from "../cart/cart.service";
+import { CartService, type CartItemInput } from "../cart/cart.service";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -26,6 +26,18 @@ export interface Tool {
 // (no provider-native function-calling) to keep LLMProvider text-only (Task 44).
 const MAX_AGENT_TURNS = 5;
 
+function toCartItems(raw: unknown): CartItemInput[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((i) => {
+    const r = i as Record<string, unknown>;
+    return {
+      productId: String(r.productId ?? ""),
+      variantId: r.variantId ? String(r.variantId) : undefined,
+      quantity: Number(r.quantity ?? 1),
+    };
+  });
+}
+
 const SYSTEM_PROMPT = `You are RAY, a shopping assistant for an online store. Help the customer find products and refine their request. Never invent products, prices, or payments. Be concise and friendly.
 When you need to look up the catalog, reply with ONLY a JSON object of the form {"tool":"<name>","args":{...}} and nothing else. Otherwise answer the customer in natural language.`;
 
@@ -43,6 +55,8 @@ export class ShoppingAgentService {
     this.getProductTool(),
     this.recommendProductsTool(),
     this.createCartTool(),
+    this.addToCartTool(),
+    this.updateCartItemTool(),
   ];
 
   private searchProductsTool(): Tool {
@@ -100,13 +114,8 @@ export class ShoppingAgentService {
       description: "Create a shopping cart with initial items so the customer can check out later.",
       parameters: '{ "items": Array<{ "productId": string, "variantId"?: string, "quantity"?: number }>, "currency"?: string }',
       execute: async (args, ctx) => {
-        const rawItems = Array.isArray(args.items) ? args.items : [];
-        if (rawItems.length === 0) return "Provide at least one item to create a cart.";
-        const items = rawItems.map((i) => ({
-          productId: String((i as Record<string, unknown>).productId ?? ""),
-          variantId: (i as Record<string, unknown>).variantId ? String((i as Record<string, unknown>).variantId) : undefined,
-          quantity: Number((i as Record<string, unknown>).quantity ?? 1),
-        }));
+        const items = toCartItems(args.items);
+        if (items.length === 0) return "Provide at least one item to create a cart.";
         // ponytail: tool is the only cart-mutating entry point; tenant scope is enforced
         // in CartService (product must belong to merchantId). Updates land in Task 50.
         const cart = await this.cart.create({
@@ -117,6 +126,39 @@ export class ShoppingAgentService {
           items,
         });
         return JSON.stringify({ cartId: cart.id, currency: cart.currency, status: cart.status, itemCount: cart.items.length });
+      },
+    };
+  }
+
+  private addToCartTool(): Tool {
+    return {
+      name: "add_to_cart",
+      description: "Add more items to an existing cart.",
+      parameters: '{ "cartId": string, "items": Array<{ "productId": string, "variantId"?: string, "quantity"?: number }> }',
+      execute: async (args, ctx) => {
+        const cartId = String(args.cartId ?? "");
+        if (!cartId) return "Provide the cartId.";
+        const items = toCartItems(args.items);
+        if (items.length === 0) return "Provide at least one item.";
+        // ponytail: tenant scope enforced in CartService via (cartId, merchantId).
+        const cart = await this.cart.addItems({ merchantId: ctx.merchantId, cartId, items });
+        return JSON.stringify({ cartId: cart.id, itemCount: cart.items.length });
+      },
+    };
+  }
+
+  private updateCartItemTool(): Tool {
+    return {
+      name: "update_cart_item",
+      description: "Change an item's quantity in a cart. Set quantity to 0 to remove it.",
+      parameters: '{ "cartId": string, "itemId": string, "quantity": number }',
+      execute: async (args, ctx) => {
+        const cartId = String(args.cartId ?? "");
+        const itemId = String(args.itemId ?? "");
+        const quantity = Number(args.quantity ?? 0);
+        if (!cartId || !itemId) return "Provide cartId and itemId.";
+        const cart = await this.cart.updateItem({ merchantId: ctx.merchantId, cartId, itemId, quantity });
+        return JSON.stringify({ cartId: cart.id, itemCount: cart.items.length });
       },
     };
   }

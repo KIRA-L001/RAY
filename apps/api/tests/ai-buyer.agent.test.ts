@@ -38,12 +38,20 @@ function fakeCatalog() {
 }
 
 function fakeCart() {
-  const calls: Array<{ merchantId: string; items: unknown[] }> = [];
+  const calls: Array<{ kind: string; merchantId: string; arg?: unknown }> = [];
   return {
     calls,
     create: async (input: { merchantId: string; items?: unknown[] }) => {
-      calls.push({ merchantId: input.merchantId, items: input.items ?? [] });
+      calls.push({ kind: "create", merchantId: input.merchantId, arg: input.items ?? [] });
       return { id: "cart-1", currency: "USD", status: "OPEN", items: [{ id: "ci-1" }, { id: "ci-2" }] };
+    },
+    addItems: async (input: { merchantId: string; cartId: string; items: unknown[] }) => {
+      calls.push({ kind: "add", merchantId: input.merchantId, arg: input.items });
+      return { id: input.cartId, currency: "USD", status: "OPEN", items: [{ id: "ci-3" }] };
+    },
+    updateItem: async (input: { merchantId: string; cartId: string; itemId: string; quantity: number }) => {
+      calls.push({ kind: "update", merchantId: input.merchantId, arg: input });
+      return { id: input.cartId, currency: "USD", status: "OPEN", items: [] };
     },
   };
 }
@@ -125,7 +133,31 @@ test("create_cart delegates to CartService with the resolved merchant scope", as
   assert.ok(out.includes("cart"));
   assert.equal(cart.calls.length, 1);
   assert.equal(cart.calls[0]?.merchantId, "m-tenant-a");
-  assert.equal((cart.calls[0]?.items as unknown[]).length, 1);
+  assert.equal((cart.calls[0]?.arg as unknown[]).length, 1);
+});
+
+test("add_to_cart delegates to CartService with the resolved merchant scope", async () => {
+  const cart = fakeCart();
+  const agent = new ShoppingAgentService(
+    fakeLlm(['{"tool":"add_to_cart","args":{"cartId":"cart-1","items":[{"productId":"p1"}]}}', "Added."]),
+    fakeCatalog() as unknown as CatalogService,
+    cart as unknown as CartService,
+  );
+  await collect(agent, [{ role: "user", content: "add another" }], ctx);
+  assert.equal(cart.calls[0]?.kind, "add");
+  assert.equal(cart.calls[0]?.merchantId, "m-tenant-a");
+});
+
+test("update_cart_item delegates tenant-scoped removal", async () => {
+  const cart = fakeCart();
+  const agent = new ShoppingAgentService(
+    fakeLlm(['{"tool":"update_cart_item","args":{"cartId":"cart-1","itemId":"ci-1","quantity":0}}', "Removed."]),
+    fakeCatalog() as unknown as CatalogService,
+    cart as unknown as CartService,
+  );
+  await collect(agent, [{ role: "user", content: "remove it" }], ctx);
+  assert.equal(cart.calls[0]?.kind, "update");
+  assert.equal(cart.calls[0]?.merchantId, "m-tenant-a");
 });
 
 test("create_cart refuses to act without items", async () => {
