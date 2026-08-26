@@ -3,11 +3,20 @@ import { config } from "dotenv";
 config({ path: "../../.env" });
 config();
 
-import { createWorker, enqueueCrawlWebsite, getRedis, QUEUE_NAMES, type CrawlWebsiteJob } from "@ray/jobs";
+import {
+  createWorker,
+  enqueueCrawlWebsite,
+  getRedis,
+  QUEUE_NAMES,
+  scheduleAnalyticsAggregation,
+  type AggregateAnalyticsJob,
+  type CrawlWebsiteJob,
+} from "@ray/jobs";
 import { getDb } from "@ray/database";
 import type { PingJob } from "@ray/jobs";
 import { processCrawlWebsite } from "./crawler/pipeline";
 import { embedWebsiteProducts } from "./embeddings/service";
+import { processAggregateAnalytics } from "./analytics/aggregator";
 
 const db = getDb();
 
@@ -33,6 +42,10 @@ const workers = [
       await db.website.update({ where: { id: job.websiteId }, data: { status: "PENDING" } });
     }
   }),
+  createWorker<AggregateAnalyticsJob>(QUEUE_NAMES.analytics, async (job) => {
+    const rows = await processAggregateAnalytics(job);
+    console.log(`[analytics] aggregated ${rows} site-day row(s)`);
+  }),
 ];
 
 for (const w of workers) {
@@ -40,6 +53,11 @@ for (const w of workers) {
     console.error(`[worker:${w.name}] job=${job?.id ?? "?"} failed: ${err.message}`);
   });
 }
+
+// ponytail: 60s recompute cadence — near-real-time dashboards need incremental counters instead
+void scheduleAnalyticsAggregation(60_000).catch((err) =>
+  console.error("[analytics] scheduling failed:", err.message),
+);
 
 /** Re-enqueues FAILED sites whose backoff window has elapsed. */
 const RETRY_SWEEP_MS = 60_000;

@@ -5,6 +5,7 @@ export const QUEUE_NAMES = {
   ping: "ping",
   crawl: "crawl",
   embedding: "embedding",
+  analytics: "analytics",
 } as const;
 
 let connection: Redis | undefined;
@@ -48,6 +49,19 @@ export async function enqueueCrawlWebsite(websiteId: string): Promise<void> {
 
 export async function enqueueEmbedding(websiteId: string): Promise<void> {
   await getQueue(QUEUE_NAMES.embedding).add("embed.website", { websiteId } satisfies CrawlWebsiteJob);
+}
+
+export interface AggregateAnalyticsJob {
+  date?: string;
+}
+
+/** Registers the repeatable daily-metrics recompute. Idempotent per (name, repeat). */
+export async function scheduleAnalyticsAggregation(everyMs: number): Promise<void> {
+  await getQueue(QUEUE_NAMES.analytics).add(
+    "aggregate.daily",
+    {} satisfies AggregateAnalyticsJob,
+    { jobId: "aggregate-daily", repeat: { every: everyMs } },
+  );
 }
 
 /** Type-safe helper for worker apps: new worker with typed job data. */
