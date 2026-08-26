@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { getDb } from "@ray/database";
+import { getDb, type Json } from "@ray/database";
 import { newId } from "@ray/types";
 import { AppException } from "../../common/errors/app.exception";
 
@@ -50,7 +50,7 @@ export class ConversationsService {
         conversationId,
         role,
         content,
-        ...(metadata ? { metadata } : {}),
+        ...(metadata ? { metadata: metadata as unknown as Json } : {}),
       },
     });
     return { id: message.id, role: message.role, content: message.content };
