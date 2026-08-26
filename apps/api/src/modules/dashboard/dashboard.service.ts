@@ -8,6 +8,8 @@ export interface DashboardSummary {
   conversations: number;
   revenueMinor: number;
   aiRevenueMinor: number;
+  averageOrderValueMinor: number;
+  ordersByStatus: Record<string, number>;
   currency: string | null;
 }
 
@@ -17,7 +19,7 @@ export class DashboardService {
 
   /** Merchant-scoped summary for the desktop dashboard. Analytics depth is Phase 6 Tasks 64-70. */
   async summary(merchantId: string): Promise<DashboardSummary> {
-    const [products, orders, customers, conversations, paidAgg, aiAgg, sample] = await Promise.all([
+    const [products, orders, customers, conversations, paidAgg, aiAgg, aovAgg, byStatus, sample] = await Promise.all([
       this.db.product.count({ where: { merchantId, deletedAt: null } }),
       this.db.order.count({ where: { merchantId } }),
       this.db.customer.count({ where: { merchantId, deletedAt: null } }),
@@ -28,6 +30,8 @@ export class DashboardService {
         where: { merchantId, status: "PAID", cart: { conversationId: { not: null } } },
         _sum: { totalMinor: true },
       }),
+      this.db.order.aggregate({ where: { merchantId, status: "PAID" }, _avg: { totalMinor: true } }),
+      this.db.order.groupBy({ by: ["status"], where: { merchantId }, _count: { _all: true } }),
       // ponytail: single-currency assumption; multi-currency roll-up lands in Task 64.
       this.db.order.findFirst({
         where: { merchantId, status: "PAID" },
@@ -36,6 +40,9 @@ export class DashboardService {
       }),
     ]);
 
+    const ordersByStatus: Record<string, number> = {};
+    for (const row of byStatus) ordersByStatus[row.status] = row._count._all;
+
     return {
       products,
       orders,
@@ -43,6 +50,8 @@ export class DashboardService {
       conversations,
       revenueMinor: paidAgg._sum.totalMinor ?? 0,
       aiRevenueMinor: aiAgg._sum.totalMinor ?? 0,
+      averageOrderValueMinor: Math.round(aovAgg._avg.totalMinor ?? 0),
+      ordersByStatus,
       currency: sample?.currency ?? null,
     };
   }
