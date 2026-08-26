@@ -203,9 +203,16 @@ export class ShoppingAgentService {
       execute: async (args, ctx) => {
         const cartId = String(args.cartId ?? "");
         if (!cartId) return "Provide the cartId.";
-        // ponytail: tenant scope enforced in OrderService; payment is a later step (status stays CREATED).
+        // ponytail: tenant scope enforced in OrderService; Razorpay order is created for client-side payment.
         const order = await this.orders.createFromCart(ctx.merchantId, cartId, ctx.customerId);
-        return JSON.stringify({ orderId: order.id, totalMinor: order.totalMinor, currency: order.currency, status: order.status });
+        const rz = await this.payments.createRazorpayOrder(ctx.merchantId, order.id);
+        return JSON.stringify({
+          orderId: order.id,
+          razorpayOrderId: rz.razorpayOrderId,
+          totalMinor: order.totalMinor,
+          currency: order.currency,
+          status: order.status,
+        });
       },
     };
   }
