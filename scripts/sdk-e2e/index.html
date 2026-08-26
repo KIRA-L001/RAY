@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>RAY SDK end-to-end test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; }
+    button { margin: .25rem; padding: .5rem 1rem; }
+    pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>RAY SDK end-to-end test</h1>
+  <p>
+    Set your site key below (get it from the DB or merchant API), then click
+    buttons — each queues a real event. Events auto-flush every
+    <code>flushAt</code> items, or press <b>Flush now</b>.
+  </p>
+  <label>Site key: <input id="siteKey" size="72" placeholder="sitekey_..." /></label><br />
+  <button onclick="boot()">Init RAY</button>
+  <button onclick="ray?.track('page_view', { path: location.pathname })">page_view</button>
+  <button onclick="ray?.track('product_view', { productId: 'prod_demo' })">product_view</button>
+  <button onclick="ray?.track('search', { query: 'shoes' })">search</button>
+  <button onclick="ray?.identify({ email: 'buyer@example.com', name: 'E2E Buyer' })">identify</button>
+  <button onclick="ray?.flush(); log('flushed')">Flush now</button>
+
+  <h2>State</h2>
+  <pre id="state"></pre>
+
+  <script src="./ray.js"></script>
+  <script>
+    let ray;
+    function log(msg) {
+      document.getElementById("state").textContent = msg + "\n\n" +
+        "anonymousId: " + localStorage.getItem("ray:anon") + "\n" +
+        "session:     " + sessionStorage.getItem("ray:sess") + "\n";
+    }
+    function boot() {
+      const key = document.getElementById("siteKey").value.trim();
+      if (!key.startsWith("sitekey_")) return alert("paste a sitekey_... first");
+      // ponytail: demo only — flush(0) sends every event instantly so results are visible
+      ray = RAY.createRay({ endpoint: "http://localhost:4000", siteKey: key, flushAt: 1 });
+      log("initialized");
+    }
+    setInterval(() => ray && log(""), 2000);
+  </script>
+</body>
+</html>

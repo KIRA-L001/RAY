@@ -22,7 +22,7 @@ const baseEventSchema = z.object({
   eventId: z.string().regex(/^evt_[\w-]+$/, "eventId must be evt_-prefixed"),
   eventType: z.enum(EVENT_TYPES),
   merchantId: z.null(),
-  websiteId: z.string().min(1).max(128).nullable(),
+  websiteId: z.string().max(128).nullable(),
   sessionId: z.string().regex(/^sess_[\w-]+$/),
   customerId: z.string().regex(/^cust_[\w-]+$/).nullable(),
   anonymousId: z.string().regex(/^anon_[\w-]+$/),

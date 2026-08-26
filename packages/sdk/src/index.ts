@@ -67,7 +67,7 @@ export function createRay(config: RayConfig) {
       eventType,
       merchantId: null,
       // Resolved server-side from the site key; client value is ignored.
-      websiteId: "",
+      websiteId: null,
       sessionId,
       customerId: null,
       anonymousId,
