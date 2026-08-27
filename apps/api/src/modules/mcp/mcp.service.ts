@@ -5,11 +5,21 @@ import { CatalogService } from "../catalog/catalog.service";
 
 @Injectable()
 export class McpService {
-  constructor(private readonly catalog: CatalogService = new CatalogService()) {}
+  // ponytail: catalog is lazy so a ping-only server (and tests) never opens a DB
+  // connection. Real CatalogService is constructed on first catalog-tool call,
+  // where DATABASE_URL is guaranteed (the MCP server needs the DB to serve catalogs).
+  private catalog?: CatalogService;
+  constructor(catalog?: CatalogService) {
+    this.catalog = catalog;
+  }
+
+  private getCatalog(): CatalogService {
+    if (!this.catalog) this.catalog = new CatalogService();
+    return this.catalog;
+  }
 
   createServer(merchantId?: string): McpServer {
     const server = new McpServer({ name: "ray", version: "1.0.0" });
-    // ponytail: only the health tool for now; catalog tools land in later tasks
     server.registerTool(
       "ping",
       { description: "Health check for the RAY MCP server", inputSchema: {} },
@@ -23,14 +33,14 @@ export class McpService {
         "search_catalog",
         { description: "Search this merchant's product catalog by keyword", inputSchema: { query: z.string().min(1).max(200) } },
         async ({ query }) => ({
-          content: [{ type: "text", text: JSON.stringify(await this.catalog.searchProducts(merchantId, query), null, 2) }],
+          content: [{ type: "text", text: JSON.stringify(await this.getCatalog().searchProducts(merchantId, query), null, 2) }],
         }),
       );
       server.registerTool(
         "list_products",
         { description: "List this merchant's products", inputSchema: { limit: z.number().int().min(1).max(100).optional() } },
         async ({ limit }) => ({
-          content: [{ type: "text", text: JSON.stringify(await this.catalog.listProducts(merchantId, limit ?? 20), null, 2) }],
+          content: [{ type: "text", text: JSON.stringify(await this.getCatalog().listProducts(merchantId, limit ?? 20), null, 2) }],
         }),
       );
     }
