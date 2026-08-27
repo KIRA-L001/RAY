@@ -32,7 +32,7 @@ function authHeader(sub = "u1"): string {
 }
 
 test("mcp rejects requests missing the X-Ray-Merchant-Id header", async () => {
-  const server = createMcpServer(new McpService(), { isMerchantMember: async () => true });
+  const server = createMcpServer(new McpService(), { resolveMerchant: async () => ({ role: "OWNER" }) });
   const port = await portOf(server);
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
@@ -44,7 +44,7 @@ test("mcp rejects requests missing the X-Ray-Merchant-Id header", async () => {
 });
 
 test("mcp rejects a user who is not a member of the requested merchant", async () => {
-  const server = createMcpServer(new McpService(), { isMerchantMember: async (u, m) => m === "m1" && u === "u1" });
+  const server = createMcpServer(new McpService(), { resolveMerchant: async (u, m) => (m === "m1" && u === "u1" ? { role: "OWNER" } : null) });
   const port = await portOf(server);
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
@@ -61,7 +61,7 @@ test("mcp rejects a user who is not a member of the requested merchant", async (
 });
 
 test("mcp scopes the session to the member merchant and threads it into tools", async () => {
-  const server = createMcpServer(new McpService(), { isMerchantMember: async (u, m) => m === "m1" && u === "u1" });
+  const server = createMcpServer(new McpService(), { resolveMerchant: async (u, m) => (m === "m1" && u === "u1" ? { role: "OWNER" } : null) });
   const port = await portOf(server);
   const token = authHeader();
   const init = await fetch(`http://127.0.0.1:${port}/mcp`, {

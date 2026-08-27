@@ -4,18 +4,18 @@ import { getDb } from "@ray/database";
 import { McpService } from "./mcp.service";
 import { jwtSecret, verifyJwt, type JwtPayload } from "../../common/auth/jwt";
 
-export type AuthedRequest = FastifyRequest & { rayAuth?: JwtPayload };
+export type AuthedRequest = FastifyRequest & { rayAuth?: JwtPayload; rayRole?: string };
 
-// ponytail: injectable for tests; prod hits Prisma. Returns true if the user may
-// act as the given merchant (i.e. has a Membership row).
-export type IsMerchantMember = (userId: string, merchantId: string) => Promise<boolean>;
+// ponytail: injectable for tests; prod hits Prisma. Resolves the calling user's
+// access to a merchant: null = not a member (403), otherwise their role.
+export type MerchantAccess = { role: string };
+export type ResolveMerchant = (userId: string, merchantId: string) => Promise<MerchantAccess | null>;
 
 export interface McpServerOptions {
-  isMerchantMember?: IsMerchantMember;
+  resolveMerchant?: ResolveMerchant;
 }
 
-// ponytail: stateless per-request auth reusing the app's HS256 JWT. Tenant
-// scoping (which merchant a token maps to) is layered below.
+// ponytail: stateless per-request auth reusing the app's HS256 JWT.
 export function requireMcpAuth(req: FastifyRequest, res: FastifyReply, done: (err?: Error) => void): void {
   const header = req.headers.authorization;
   const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
@@ -33,16 +33,16 @@ export function requireMcpAuth(req: FastifyRequest, res: FastifyReply, done: (er
   done();
 }
 
-async function defaultIsMember(userId: string, merchantId: string): Promise<boolean> {
-  const m = await getDb().membership.findFirst({ where: { userId, merchantId } });
-  return m !== null;
+async function defaultResolve(userId: string, merchantId: string): Promise<MerchantAccess | null> {
+  const m = await getDb().membership.findFirst({ where: { userId, merchantId }, select: { role: true } });
+  return m ? { role: m.role } : null;
 }
 
 // ponytail: run MCP on its own Fastify instance to avoid Nest's global onSend
 // hooks (helmet, x-request-id) aborting hijacked replies. Can be fronted by the
 // API gateway on a /mcp path later.
 export function createMcpServer(svc: McpService, opts: McpServerOptions = {}): FastifyInstance {
-  const isMember = opts.isMerchantMember ?? defaultIsMember;
+  const resolve = opts.resolveMerchant ?? defaultResolve;
   const app = Fastify();
   app.post("/mcp", { preHandler: requireMcpAuth }, async (req, res) => {
     const auth = (req as AuthedRequest).rayAuth!;
@@ -53,12 +53,14 @@ export function createMcpServer(svc: McpService, opts: McpServerOptions = {}): F
     }
     // ponytail: admin users (adminRole set) still go through membership for now;
     // broaden to cross-merchant admin access if a use case appears.
-    if (!(await isMember(auth.sub, merchantId))) {
+    const access = await resolve(auth.sub, merchantId);
+    if (!access) {
       res.code(403).send({ jsonrpc: "2.0", error: { code: -32003, message: "forbidden: not a member of this merchant" }, id: null });
       return;
     }
+    (req as AuthedRequest).rayRole = access.role;
     res.hijack();
-    const server = svc.createServer(merchantId);
+    const server = svc.createServer(merchantId, access.role);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     // ponytail: don't close the transport in the handler; it self-closes when the
     // SSE stream ends. Closing early cuts the response before the client reads it.

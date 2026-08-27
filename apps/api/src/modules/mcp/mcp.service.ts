@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { CatalogService } from "../catalog/catalog.service";
 import { CartService } from "../cart/cart.service";
@@ -26,7 +27,7 @@ export class McpService {
     return this.cart;
   }
 
-  createServer(merchantId?: string): McpServer {
+  createServer(merchantId?: string, role?: string): McpServer {
     const server = new McpServer({ name: "ray", version: "1.0.0" });
     server.registerTool(
       "ping",
@@ -37,6 +38,14 @@ export class McpService {
     // guarantees merchantId on every request). They are scoped to that merchant
     // via the closure, so client-supplied merchant ids are ignored.
     if (merchantId) {
+      // ponytail: VIEWER is read-only; mutating tools are denied. Per-tool
+      // authorization only (no API-key/McpServer scoping yet — schema has an
+      // McpServer table for that if finer control is needed later).
+      const readOnly = role === "VIEWER";
+      const denyMutate = (): CallToolResult => ({
+        content: [{ type: "text", text: "403 forbidden: VIEWER role cannot modify the catalog" }],
+        isError: true,
+      });
       server.registerTool(
         "search_catalog",
         { description: "Search this merchant's product catalog by keyword", inputSchema: { query: z.string().min(1).max(200) } },
@@ -63,18 +72,21 @@ export class McpService {
             sessionId: z.string().optional(),
           },
         },
-        async ({ items, currency, customerId, sessionId }) => ({
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                await this.getCart().create({ merchantId, items, currency, customerId, sessionId }),
-                null,
-                2,
-              ),
-            },
-          ],
-        }),
+        async ({ items, currency, customerId, sessionId }) => {
+          if (readOnly) return denyMutate();
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  await this.getCart().create({ merchantId, items, currency, customerId, sessionId }),
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        },
       );
       server.registerTool(
         "add_to_cart",
@@ -82,9 +94,10 @@ export class McpService {
           description: "Add items to an existing cart for this merchant",
           inputSchema: { cartId: z.string().min(1), items: z.array(itemSchema).min(1) },
         },
-        async ({ cartId, items }) => ({
-          content: [{ type: "text", text: JSON.stringify(await this.getCart().addItems({ merchantId, cartId, items }), null, 2) }],
-        }),
+        async ({ cartId, items }) => {
+          if (readOnly) return denyMutate();
+          return { content: [{ type: "text", text: JSON.stringify(await this.getCart().addItems({ merchantId, cartId, items }), null, 2) }] };
+        },
       );
     }
     return server;
