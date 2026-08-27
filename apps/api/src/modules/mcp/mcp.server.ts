@@ -60,7 +60,7 @@ export function createMcpServer(svc: McpService, opts: McpServerOptions = {}): F
     }
     (req as AuthedRequest).rayRole = access.role;
     res.hijack();
-    const server = svc.createServer(merchantId, access.role);
+    const server = svc.createServer(merchantId, access.role, { sub: auth.sub, role: access.role });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     // ponytail: don't close the transport in the handler; it self-closes when the
     // SSE stream ends. Closing early cuts the response before the client reads it.

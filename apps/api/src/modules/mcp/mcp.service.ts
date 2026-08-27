@@ -2,8 +2,23 @@ import { Injectable } from "@nestjs/common";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { getDb, type Json } from "@ray/database";
+import { newId } from "@ray/types";
 import { CatalogService } from "../catalog/catalog.service";
-import { CartService } from "../cart/cart.service";
+import { CartService, type CartItemInput } from "../cart/cart.service";
+
+export interface ToolCallEntry {
+  merchantId: string;
+  serverId?: string | null;
+  toolName: string;
+  callerInfo?: Json;
+  input: Json;
+  output?: Json;
+  status: "OK" | "ERROR";
+  durationMs: number;
+}
+
+export type ToolLogger = (entry: ToolCallEntry) => void | Promise<void>;
 
 @Injectable()
 export class McpService {
@@ -12,9 +27,11 @@ export class McpService {
   // is guaranteed (the MCP server needs the DB to serve catalogs/carts).
   private catalog?: CatalogService;
   private cart?: CartService;
-  constructor(catalog?: CatalogService, cart?: CartService) {
+  private logger: ToolLogger;
+  constructor(catalog?: CatalogService, cart?: CartService, logger?: ToolLogger) {
     this.catalog = catalog;
     this.cart = cart;
+    this.logger = logger ?? defaultToolLogger;
   }
 
   private getCatalog(): CatalogService {
@@ -27,12 +44,14 @@ export class McpService {
     return this.cart;
   }
 
-  createServer(merchantId?: string, role?: string): McpServer {
+  createServer(merchantId?: string, role?: string, callerInfo?: Json): McpServer {
     const server = new McpServer({ name: "ray", version: "1.0.0" });
     server.registerTool(
       "ping",
       { description: "Health check for the RAY MCP server", inputSchema: {} },
-      async () => ({ content: [{ type: "text", text: merchantId ? `pong | merchant=${merchantId}` : "pong" }] }),
+      this.wrap(merchantId, callerInfo, "ping", async () => ({
+        content: [{ type: "text", text: merchantId ? `pong | merchant=${merchantId}` : "pong" }],
+      })),
     );
     // ponytail: tools are only registered when a tenant is resolved (Task 82
     // guarantees merchantId on every request). They are scoped to that merchant
@@ -49,16 +68,16 @@ export class McpService {
       server.registerTool(
         "search_catalog",
         { description: "Search this merchant's product catalog by keyword", inputSchema: { query: z.string().min(1).max(200) } },
-        async ({ query }) => ({
-          content: [{ type: "text", text: JSON.stringify(await this.getCatalog().searchProducts(merchantId, query), null, 2) }],
-        }),
+        this.wrap(merchantId, callerInfo, "search_catalog", async ({ query }) => ({
+          content: [{ type: "text", text: JSON.stringify(await this.getCatalog().searchProducts(merchantId, query as string), null, 2) }],
+        })),
       );
       server.registerTool(
         "list_products",
         { description: "List this merchant's products", inputSchema: { limit: z.number().int().min(1).max(100).optional() } },
-        async ({ limit }) => ({
-          content: [{ type: "text", text: JSON.stringify(await this.getCatalog().listProducts(merchantId, limit ?? 20), null, 2) }],
-        }),
+        this.wrap(merchantId, callerInfo, "list_products", async ({ limit }) => ({
+          content: [{ type: "text", text: JSON.stringify(await this.getCatalog().listProducts(merchantId, (limit as number | undefined) ?? 20), null, 2) }],
+        })),
       );
       const itemSchema = z.object({ productId: z.string().min(1), variantId: z.string().optional(), quantity: z.number().int().min(1).max(999) });
       server.registerTool(
@@ -72,8 +91,14 @@ export class McpService {
             sessionId: z.string().optional(),
           },
         },
-        async ({ items, currency, customerId, sessionId }) => {
+        this.wrap(merchantId, callerInfo, "create_cart", async (args) => {
           if (readOnly) return denyMutate();
+          const { items, currency, customerId, sessionId } = args as {
+            items?: CartItemInput[];
+            currency?: string;
+            customerId?: string;
+            sessionId?: string;
+          };
           return {
             content: [
               {
@@ -86,7 +111,7 @@ export class McpService {
               },
             ],
           };
-        },
+        }),
       );
       server.registerTool(
         "add_to_cart",
@@ -94,12 +119,87 @@ export class McpService {
           description: "Add items to an existing cart for this merchant",
           inputSchema: { cartId: z.string().min(1), items: z.array(itemSchema).min(1) },
         },
-        async ({ cartId, items }) => {
+        this.wrap(merchantId, callerInfo, "add_to_cart", async (args) => {
           if (readOnly) return denyMutate();
+          const { cartId, items } = args as { cartId: string; items: CartItemInput[] };
           return { content: [{ type: "text", text: JSON.stringify(await this.getCart().addItems({ merchantId, cartId, items }), null, 2) }] };
-        },
+        }),
       );
     }
     return server;
   }
+
+  // ponytail: wraps a tool handler to persist a McpToolCall row. Logging uses a
+  // best-effort logger that must never break the tool response.
+  private wrap(
+    merchantId: string | undefined,
+    callerInfo: Json | undefined,
+    toolName: string,
+    handler: (args: Record<string, unknown>) => Promise<CallToolResult>,
+  ) {
+    return async (args: Record<string, unknown>): Promise<CallToolResult> => {
+      const start = Date.now();
+      try {
+        const result = await handler(args);
+        await this.logCall(merchantId, callerInfo, toolName, args as unknown as Json, result as unknown as Json, true, Date.now() - start);
+        return result;
+      } catch (err) {
+        await this.logCall(
+          merchantId,
+          callerInfo,
+          toolName,
+          args as unknown as Json,
+          { error: String(err) } as unknown as Json,
+          false,
+          Date.now() - start,
+        );
+        throw err;
+      }
+    };
+  }
+
+  private async logCall(
+    merchantId: string | undefined,
+    callerInfo: Json | undefined,
+    toolName: string,
+    input: Json,
+    output: Json | undefined,
+    ok: boolean,
+    ms: number,
+  ): Promise<void> {
+    if (!merchantId) return;
+    try {
+      await this.logger({
+        merchantId,
+        serverId: null,
+        toolName,
+        callerInfo: callerInfo ?? undefined,
+        input,
+        output,
+        status: ok ? "OK" : "ERROR",
+        durationMs: ms,
+      });
+    } catch {
+      // ponytail: logging must never break the tool call
+    }
+  }
+}
+
+// ponytail: default logger writes to McpToolCall. Lazy getDb() so a ping-only /
+// test server opens no connection; if DATABASE_URL is absent it throws and is
+// swallowed above — logging silently no-ops rather than failing the tool.
+async function defaultToolLogger(entry: ToolCallEntry): Promise<void> {
+  await getDb().mcpToolCall.create({
+    data: {
+      id: newId("mtc"),
+      merchantId: entry.merchantId,
+      serverId: entry.serverId ?? null,
+      toolName: entry.toolName,
+      callerInfo: entry.callerInfo ?? undefined,
+      input: entry.input,
+      output: entry.output ?? undefined,
+      status: entry.status,
+      durationMs: entry.durationMs,
+    },
+  });
 }
