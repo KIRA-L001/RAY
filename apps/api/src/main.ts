@@ -19,17 +19,12 @@ async function bootstrap(): Promise<void> {
     bodyLimit: 1_048_576,
     genReqId: () => randomUUID(),
   });
-  // ponytail: stash the raw bytes so webhook HMAC uses exact payload (re-parsed JSON would mismatch).
-  adapter.getInstance().addContentTypeParser("application/json", { parseAs: "buffer" }, (req, body, done) => {
-    (req as { rawBody?: Buffer }).rawBody = body as Buffer;
-    try {
-      done(null, JSON.parse(body.toString("utf8")));
-    } catch (err) {
-      done(err as Error);
-    }
-  });
+  // ponytail: raw request bytes are captured natively via `rawBody: true` (below) so
+  // webhook HMAC uses the exact payload. Registering our own JSON parser here conflicted
+  // with Nest's parser (FST_ERR_CTP_ALREADY_PRESENT); let Nest own body parsing.
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, adapter, {
     bufferLogs: true,
+    rawBody: true,
   });
   app.useLogger(app.get(Logger));
 
