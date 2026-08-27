@@ -32,8 +32,8 @@ test("mcp /mcp rejects a request without a bearer token", async () => {
   await server.close();
 });
 
-test("mcp /mcp accepts a valid bearer token", async () => {
-  const server = createMcpServer(new McpService());
+test("mcp /mcp accepts a valid bearer token for a member merchant", async () => {
+  const server = createMcpServer(new McpService(), { isMerchantMember: async () => true });
   const port = await portOf(server);
   const token = signJwt({ sub: "user-1", email: "a@b.c" }, process.env.JWT_SECRET as string, 3600);
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
@@ -42,6 +42,7 @@ test("mcp /mcp accepts a valid bearer token", async () => {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       authorization: `Bearer ${token}`,
+      "x-ray-merchant-id": "m1",
     },
     body: JSON.stringify(initBody),
   });
@@ -51,7 +52,7 @@ test("mcp /mcp accepts a valid bearer token", async () => {
 });
 
 test("mcp /mcp rejects a tampered token", async () => {
-  const server = createMcpServer(new McpService());
+  const server = createMcpServer(new McpService(), { isMerchantMember: async () => true });
   const port = await portOf(server);
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: "POST",
@@ -59,6 +60,7 @@ test("mcp /mcp rejects a tampered token", async () => {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       authorization: "Bearer not.a.jwt",
+      "x-ray-merchant-id": "m1",
     },
     body: JSON.stringify(initBody),
   });
