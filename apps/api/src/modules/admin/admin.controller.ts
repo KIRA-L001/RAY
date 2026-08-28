@@ -50,4 +50,19 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("customers")
+  listCustomers() {
+    return this.db.customer.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        email: true,
+        phone: true,
+        name: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
