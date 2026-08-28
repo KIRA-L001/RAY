@@ -700,6 +700,7 @@ model Notification {
   purpose        String
   body           String
   status         NotificationStatus @default(QUEUED)
+  attempts       Int                @default(0)
   idempotencyKey String             @unique
   error          Json?
   sentAt         DateTime?
