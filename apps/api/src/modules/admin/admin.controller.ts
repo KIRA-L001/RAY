@@ -82,4 +82,20 @@ export class AdminController {
       orderBy: { occurredAt: "desc" },
     });
   }
+
+  @Get("conversations")
+  listConversations() {
+    return this.db.conversation.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        customerId: true,
+        channel: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
