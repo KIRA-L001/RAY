@@ -1,11 +1,14 @@
 import { Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 
+export type { Worker, Job } from "bullmq";
+
 export const QUEUE_NAMES = {
   ping: "ping",
   crawl: "crawl",
   embedding: "embedding",
   analytics: "analytics",
+  notifications: "notifications",
 } as const;
 
 let connection: Redis | undefined;

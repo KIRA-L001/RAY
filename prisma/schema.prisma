@@ -695,19 +695,20 @@ enum NotificationStatus {
 model Notification {
   id             String             @id
   merchantId     String
-  channelId      String
+  channelId      String?
   customerId     String?
   purpose        String
   body           String
   status         NotificationStatus @default(QUEUED)
   attempts       Int                @default(0)
   idempotencyKey String             @unique
+  externalId     String?
   error          Json?
   sentAt         DateTime?
   createdAt      DateTime           @default(now())
 
   merchant Merchant            @relation(fields: [merchantId], references: [id])
-  channel  NotificationChannel @relation(fields: [channelId], references: [id])
+  channel  NotificationChannel? @relation(fields: [channelId], references: [id])
   customer Customer?           @relation(fields: [customerId], references: [id])
 
   @@index([merchantId, status, createdAt])
