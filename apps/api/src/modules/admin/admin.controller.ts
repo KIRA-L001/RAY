@@ -1,5 +1,6 @@
 import { Controller, Get, UseGuards } from "@nestjs/common";
 import { getDb } from "@ray/database";
+import { getRedis } from "@ray/jobs";
 import { AdminGuard } from "../../common/admin/admin.guard";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 
@@ -218,5 +219,28 @@ export class AdminController {
       },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  @Get("health")
+  async health() {
+    let redis = "down";
+    try {
+      await getRedis().ping();
+      redis = "up";
+    } catch {
+      // ponytail: single Redis ping; add per-component checks if more stores appear.
+    }
+    const [merchants, products, notificationsFailed, webhooksInvalid, agentsRunning] = await Promise.all([
+      this.db.merchant.count(),
+      this.db.product.count(),
+      this.db.notification.count({ where: { status: "FAILED" } }),
+      this.db.webhookEvent.count({ where: { signatureValid: false } }),
+      this.db.agentRun.count({ where: { status: "RUNNING" } }),
+    ]);
+    return {
+      db: "up",
+      redis,
+      counts: { merchants, products, notificationsFailed, webhooksInvalid, agentsRunning },
+    };
   }
 }
