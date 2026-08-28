@@ -15,4 +15,21 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("websites")
+  listWebsites() {
+    return this.db.website.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        url: true,
+        hostname: true,
+        status: true,
+        errorCode: true,
+        retryCount: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
