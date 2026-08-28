@@ -32,4 +32,22 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("products")
+  listProducts() {
+    return this.db.product.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        websiteId: true,
+        name: true,
+        brand: true,
+        priceMinor: true,
+        currency: true,
+        status: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
