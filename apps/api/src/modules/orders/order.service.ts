@@ -8,7 +8,14 @@ export class OrderService {
   private readonly db = getDb();
 
   /** Convert a tenant-scoped cart into an order. Payments are out of scope (status CREATED). */
-  async createFromCart(merchantId: string, cartId: string, customerId?: string) {
+  async createFromCart(merchantId: string, cartId: string, customerId?: string, idempotencyKey?: string) {
+    if (idempotencyKey) {
+      const existing = await this.db.order.findFirst({
+        where: { merchantId, idempotencyKey },
+        select: { id: true, totalMinor: true, currency: true, status: true },
+      });
+      if (existing) return existing;
+    }
     const cart = await this.db.cart.findUnique({
       where: { id: cartId, merchantId },
       select: {
@@ -51,6 +58,7 @@ export class OrderService {
         subtotalMinor: subtotal,
         totalMinor: subtotal,
         currency: cart.currency,
+        idempotencyKey: idempotencyKey ?? null,
         items: { create: items.map((i) => ({ ...i, id: newId("oi") })) },
       },
       select: { id: true, totalMinor: true, currency: true, status: true },

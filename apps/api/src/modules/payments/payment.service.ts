@@ -75,7 +75,13 @@ export class PaymentService {
   async payOrder(
     merchantId: string,
     orderId: string,
-    opts?: { method?: string; customerId?: string; razorpayPaymentId?: string; razorpaySignature?: string },
+    opts?: {
+      method?: string;
+      customerId?: string;
+      razorpayPaymentId?: string;
+      razorpaySignature?: string;
+      idempotencyKey?: string;
+    },
   ) {
     const order = await this.db.order.findUnique({
       where: { id: orderId, merchantId },
@@ -105,6 +111,21 @@ export class PaymentService {
       });
     } else {
       // ponytail: local stub capture; webhook ingestion (Task 56) is the canonical confirm path.
+      // Idempotency: a provided key returns the prior capture instead of double-charging.
+      if (opts?.idempotencyKey) {
+        const prior = await this.db.payment.findFirst({
+          where: { merchantId, idempotencyKey: opts.idempotencyKey },
+          select: { id: true, state: true },
+        });
+        if (prior) {
+          const updated = await this.db.order.update({
+            where: { id: orderId, merchantId },
+            data: { status: "PAID" },
+            select: { id: true, status: true, totalMinor: true, currency: true },
+          });
+          return updated;
+        }
+      }
       await this.db.payment.create({
         data: {
           id: newId("pay"),
@@ -115,6 +136,7 @@ export class PaymentService {
           currency: order.currency,
           method: opts?.method ?? "manual",
           customerId: opts?.customerId ?? order.customerId,
+          idempotencyKey: opts?.idempotencyKey ?? null,
           capturedAt: new Date(),
         },
       });
