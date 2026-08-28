@@ -98,4 +98,22 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("agents")
+  listAgents() {
+    return this.db.agentRun.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        agentType: true,
+        conversationId: true,
+        status: true,
+        modelProvider: true,
+        model: true,
+        startedAt: true,
+        completedAt: true,
+      },
+      orderBy: { startedAt: "desc" },
+    });
+  }
 }
