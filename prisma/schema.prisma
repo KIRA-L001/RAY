@@ -689,6 +689,8 @@ model WebhookEvent {
 enum NotificationStatus {
   QUEUED
   SENT
+  DELIVERED
+  READ
   FAILED
 }
 

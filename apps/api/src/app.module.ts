@@ -18,6 +18,7 @@ import { AgentsModule } from "./modules/agents/agents.module";
 import { EventsModule } from "./modules/events/events.module";
 import { ConversationsModule } from "./modules/conversations/conversations.module";
 import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AiBuyerModule } from "./modules/ai-buyer/ai-buyer.module";
     EventsModule,
     ConversationsModule,
     AiBuyerModule,
+    NotificationsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
