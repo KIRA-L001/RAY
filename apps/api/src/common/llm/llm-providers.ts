@@ -1,5 +1,6 @@
 import type { LLMProvider } from "./llm-provider.interface";
 import { MockLLMProvider } from "./llm-provider.interface";
+import { assertPublicUrl } from "../security/ssrf";
 
 export type LlmProviderName = "openai" | "anthropic" | "gemini" | "mock";
 
@@ -230,6 +231,11 @@ function envNum(key: string): number | undefined {
 
 export function llmConfigFromEnv(): LlmConfig {
   const provider = (process.env.LLM_PROVIDER?.toLowerCase() ?? "mock") as LlmConfig["provider"];
+  const guardedBaseUrl = (v?: string): string | undefined => {
+    if (!v) return undefined;
+    assertPublicUrl(v);
+    return v;
+  };
   return {
     provider,
     openaiApiKey: process.env.OPENAI_API_KEY,
@@ -240,9 +246,9 @@ export function llmConfigFromEnv(): LlmConfig {
     maxTokens: envNum("LLM_MAX_TOKENS"),
     timeoutMs: envNum("LLM_TIMEOUT_MS") ?? 30_000,
     baseUrl: {
-      openai: process.env.OPENAI_BASE_URL,
-      anthropic: process.env.ANTHROPIC_BASE_URL,
-      gemini: process.env.GEMINI_BASE_URL,
+      openai: guardedBaseUrl(process.env.OPENAI_BASE_URL),
+      anthropic: guardedBaseUrl(process.env.ANTHROPIC_BASE_URL),
+      gemini: guardedBaseUrl(process.env.GEMINI_BASE_URL),
     },
   };
 }
