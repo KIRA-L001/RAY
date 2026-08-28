@@ -201,4 +201,22 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("audit-logs")
+  listAuditLogs() {
+    return this.db.auditLog.findMany({
+      select: {
+        id: true,
+        actorUserId: true,
+        actorRole: true,
+        merchantId: true,
+        action: true,
+        resourceType: true,
+        resourceId: true,
+        requestId: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
