@@ -10,6 +10,7 @@ import { PaymentService } from "../payments/payment.service";
 import { AgentRuntimeService } from "./agent-runtime.service";
 import { PolicyEngine } from "./policy-engine.service";
 import { wrapUntrusted } from "../../common/security/prompt-injection";
+import { redactSensitive } from "../../common/security/redact";
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 export type AgentMessage = { role: AgentRole; content: string };
@@ -324,10 +325,10 @@ export class ShoppingAgentService {
         safeArgs = sanitizeArgs(call.args);
       } catch {
         if (agentRunId) {
-          await this.runtime.logToolCall({
+           await this.runtime.logToolCall({
             agentRunId,
             toolName: call.tool.name,
-            args: call.args as Json,
+            args: redactSensitive(call.args) as Json,
             result: "invalid arguments",
             status: "ERROR",
             durationMs: Date.now() - started,
@@ -355,10 +356,10 @@ export class ShoppingAgentService {
       // ponytail: tool output fed back as a user turn; wrapped as untrusted data, never as instructions.
       messages.push({ role: "user", content: `Tool result (${call.tool.name}): ${wrapUntrusted(result, "tool")}` });
       if (agentRunId) {
-        await this.runtime.logToolCall({
+         await this.runtime.logToolCall({
           agentRunId,
           toolName: call.tool.name,
-          args: safeArgs as Json,
+          args: redactSensitive(safeArgs) as Json,
           result,
           status,
           durationMs: Date.now() - started,

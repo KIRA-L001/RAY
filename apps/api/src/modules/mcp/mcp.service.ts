@@ -4,6 +4,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { getDb, type Json } from "@ray/database";
 import { newId } from "@ray/types";
+import { redactSensitive } from "../../common/security/redact";
 import { CatalogService } from "../catalog/catalog.service";
 import { CartService, type CartItemInput } from "../cart/cart.service";
 
@@ -173,8 +174,8 @@ export class McpService {
         merchantId,
         serverId: null,
         toolName,
-        callerInfo: callerInfo ?? undefined,
-        input,
+        callerInfo: callerInfo ? redactSensitive(callerInfo) : undefined,
+        input: redactSensitive(input),
         output,
         status: ok ? "OK" : "ERROR",
         durationMs: ms,
