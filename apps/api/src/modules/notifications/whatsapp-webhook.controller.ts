@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import { getDb, Json } from "@ray/database";
 import { decryptJson } from "./crypto";
 import { extractStatuses, verifyMetaSignature } from "./whatsapp-webhook";
+import { createInMemoryRateLimiter } from "../../common/security/rate-limiter";
+
+// ponytail: public, unauthenticated endpoint. Fixed-window cap per channel as a
+// flood backstop; signature verification (above) is the real authenticity check.
+const ingestLimiter = createInMemoryRateLimiter(600, 60_000);
 
 interface RawBodyRequest extends FastifyRequest {
   rawBody?: Buffer;
@@ -45,6 +50,7 @@ export class WhatsAppWebhookController {
       select: { merchantId: true, encryptedConfig: true },
     });
     if (!channel) return { ok: false, error: "channel_not_found" };
+    if (!ingestLimiter(channelId)) return { ok: false, error: "rate_limited" };
 
     const raw = req.rawBody;
     if (!raw || !signature) return { ok: false, error: "missing_signature" };

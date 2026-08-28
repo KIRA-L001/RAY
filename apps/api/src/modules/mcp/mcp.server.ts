@@ -3,6 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { getDb } from "@ray/database";
 import { McpService } from "./mcp.service";
 import { jwtSecret, verifyJwt, type JwtPayload } from "../../common/auth/jwt";
+import { createInMemoryRateLimiter, type RateLimiter } from "../../common/security/rate-limiter";
 
 export type AuthedRequest = FastifyRequest & { rayAuth?: JwtPayload; rayRole?: string };
 
@@ -12,32 +13,15 @@ export type MerchantAccess = { role: string };
 export type ResolveMerchant = (userId: string, merchantId: string) => Promise<MerchantAccess | null>;
 
 // ponytail: returns true if a request for this merchant is still allowed.
-// In-memory per-process limiter; swap for a shared (Redis) limiter if the MCP
-// server is ever scaled across multiple instances.
-export type RateLimit = (merchantId: string) => boolean;
+export type RateLimit = RateLimiter;
 
 export interface McpServerOptions {
   resolveMerchant?: ResolveMerchant;
   rateLimit?: RateLimit;
 }
 
-// ponytail: simple fixed-window counter per merchant. DEFAULT_MAX per DEFAULT_WINDOW_MS.
 const DEFAULT_MAX = 1000;
 const DEFAULT_WINDOW_MS = 60_000;
-function createInMemoryRateLimiter(max: number, windowMs: number): RateLimit {
-  const hits = new Map<string, { count: number; resetAt: number }>();
-  return (merchantId: string) => {
-    const now = Date.now();
-    const entry = hits.get(merchantId);
-    if (!entry || now >= entry.resetAt) {
-      hits.set(merchantId, { count: 1, resetAt: now + windowMs });
-      return true;
-    }
-    if (entry.count >= max) return false;
-    entry.count++;
-    return true;
-  };
-}
 
 // ponytail: stateless per-request auth reusing the app's HS256 JWT.
 export function requireMcpAuth(req: FastifyRequest, res: FastifyReply, done: (err?: Error) => void): void {

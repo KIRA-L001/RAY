@@ -56,12 +56,14 @@ test("webhook: a resent delivery is treated as a replay, not processed twice", {
   await db.notificationChannel.create({
     data: { id: channelId, merchantId, type: "WHATSAPP", encryptedConfig: encryptJson({ appSecret }) },
   });
+
+  const wamid = `wamid.${rid()}`;
   await db.notification.create({
     data: {
       id: `n_${rid()}`,
       merchantId,
       channelId,
-      externalId: "wamid.replay",
+      externalId: wamid,
       purpose: "ORDER_UPDATE",
       idempotencyKey: `idem_${rid()}`,
       status: "SENT",
@@ -70,7 +72,7 @@ test("webhook: a resent delivery is treated as a replay, not processed twice", {
     },
   });
 
-  const payload = { entry: [{ changes: [{ value: { statuses: [{ id: "wamid.replay", status: "delivered" }] } }] }] };
+  const payload = { entry: [{ changes: [{ value: { statuses: [{ id: wamid, status: "delivered" }] } }] }] };
   const raw = Buffer.from(JSON.stringify(payload));
   const sig = "sha256=" + createHmac("sha256", appSecret).update(raw).digest("hex");
   const req = { rawBody: raw, body: payload } as unknown as Parameters<WhatsAppWebhookController["ingest"]>[1];
@@ -83,7 +85,7 @@ test("webhook: a resent delivery is treated as a replay, not processed twice", {
   assert.equal(second.replayed, 1);
   assert.equal(second.processed, 0);
   const events = await db.webhookEvent.findMany({
-    where: { provider: "whatsapp", externalEventId: "wamid.replay:DELIVERED", merchantId },
+    where: { provider: "whatsapp", externalEventId: `${wamid}:DELIVERED`, merchantId },
   });
   assert.equal(events.length, 1);
 });

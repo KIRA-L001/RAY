@@ -33,20 +33,23 @@ async function seedChain() {
 test("createFromCart is idempotent on a caller-supplied key", { skip: !dbConfigured }, async () => {
   const { merchantId, cartId } = await seedChain();
   const svc = new OrderService();
-  const a = await svc.createFromCart(merchantId, cartId, undefined, "key-1");
-  const b = await svc.createFromCart(merchantId, cartId, undefined, "key-1");
+  const k1 = `key-${rid()}`;
+  const k2 = `key-${rid()}`;
+  const a = await svc.createFromCart(merchantId, cartId, undefined, k1);
+  const b = await svc.createFromCart(merchantId, cartId, undefined, k1);
   assert.equal(b.id, a.id, "same key returns the same order");
-  const c = await svc.createFromCart(merchantId, cartId, undefined, "key-2");
+  const c = await svc.createFromCart(merchantId, cartId, undefined, k2);
   assert.notEqual(c.id, a.id, "different key creates a new order");
 });
 
 test("payOrder does not double-capture under repeated submission", { skip: !dbConfigured }, async () => {
   const { merchantId, cartId } = await seedChain();
   const orders = new OrderService();
-  const order = await orders.createFromCart(merchantId, cartId, undefined, "pay-key-1");
+  const k = `pay-${rid()}`;
+  const order = await orders.createFromCart(merchantId, cartId, undefined, `order-${rid()}`);
   const payments = new PaymentService({} as unknown as import("../src/modules/payments/razorpay.adapter").RazorpayAdapter);
-  await payments.payOrder(merchantId, order.id, { idempotencyKey: "pay-key-1" });
-  await payments.payOrder(merchantId, order.id, { idempotencyKey: "pay-key-1" });
-  const count = await getDb().payment.count({ where: { merchantId, idempotencyKey: "pay-key-1" } });
+  await payments.payOrder(merchantId, order.id, { idempotencyKey: k });
+  await payments.payOrder(merchantId, order.id, { idempotencyKey: k });
+  const count = await getDb().payment.count({ where: { merchantId, idempotencyKey: k } });
   assert.equal(count, 1, "only one payment captured for the same idempotency key");
 });
