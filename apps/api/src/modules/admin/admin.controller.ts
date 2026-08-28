@@ -116,4 +116,41 @@ export class AdminController {
       orderBy: { startedAt: "desc" },
     });
   }
+
+  @Get("orders")
+  listOrders() {
+    return this.db.order.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        customerId: true,
+        status: true,
+        subtotalMinor: true,
+        totalMinor: true,
+        currency: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  @Get("payments")
+  listPayments() {
+    return this.db.payment.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        orderId: true,
+        customerId: true,
+        state: true,
+        amountMinor: true,
+        currency: true,
+        method: true,
+        errorCode: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
