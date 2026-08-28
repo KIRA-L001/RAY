@@ -170,4 +170,35 @@ export class AdminController {
       orderBy: { receivedAt: "desc" },
     });
   }
+
+  @Get("mcp-servers")
+  listMcpServers() {
+    return this.db.mcpServer.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        name: true,
+        enabled: true,
+        lastUsedAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  @Get("mcp-tool-calls")
+  listMcpToolCalls() {
+    return this.db.mcpToolCall.findMany({
+      select: {
+        id: true,
+        merchantId: true,
+        serverId: true,
+        toolName: true,
+        status: true,
+        durationMs: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  }
 }
