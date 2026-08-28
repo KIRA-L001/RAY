@@ -7,6 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "mcp": "tsx src/mcp-bootstrap.ts",
+    "worker": "tsx src/worker-bootstrap.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "node --import tsx --test tests/*.test.ts"
