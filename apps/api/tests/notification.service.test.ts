@@ -51,3 +51,28 @@ test("send returns no_provider when no provider is registered for the type", asy
   assert.equal(res.ok, false);
   assert.equal(res.error, "no_provider");
 });
+
+test("send blocks when the customer has not opted in", async () => {
+  let called = false;
+  const svc = new NotificationService(
+    async () => channel("CONNECTED"),
+    async () => false,
+  );
+  svc.register(fakeProvider("WHATSAPP", () => (called = true)));
+  const res = await svc.send({ merchantId: "m1", channelType: "WHATSAPP", to: "+919999", body: "hi", customerId: "c1" });
+  assert.equal(res.ok, false);
+  assert.equal(res.error, "consent_required");
+  assert.equal(called, false);
+});
+
+test("send proceeds when the customer has opted in", async () => {
+  let seen: { to: string; config: Record<string, unknown> } | undefined;
+  const svc = new NotificationService(
+    async () => channel("CONNECTED"),
+    async () => true,
+  );
+  svc.register(fakeProvider("WHATSAPP", (i) => (seen = i)));
+  const res = await svc.send({ merchantId: "m1", channelType: "WHATSAPP", to: "+919999", body: "hi", customerId: "c1" });
+  assert.equal(res.ok, true);
+  assert.equal(seen?.to, "+919999");
+});

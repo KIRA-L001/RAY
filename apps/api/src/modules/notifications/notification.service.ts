@@ -25,6 +25,9 @@ export type ChannelResolver = (
   channelType: string,
 ) => Promise<{ id: string; status: string; encryptedConfig: string } | null>;
 
+/** Returns true when the customer has opted in to be messaged on this channel. */
+export type ConsentResolver = (customerId: string) => Promise<boolean>;
+
 async function defaultChannelResolver(
   merchantId: string,
   channelType: string,
@@ -36,10 +39,23 @@ async function defaultChannelResolver(
   return channel;
 }
 
+// ponytail: single WhatsApp opt-in flag on Customer. If more channels gain
+// consent, replace with a per-channel consent row keyed by (customer, channel).
+async function defaultConsentResolver(customerId: string): Promise<boolean> {
+  const customer = await getDb().customer.findUnique({
+    where: { id: customerId },
+    select: { whatsappOptIn: true },
+  });
+  return customer?.whatsappOptIn ?? false;
+}
+
 export class NotificationService {
   private readonly providers = new Map<string, NotificationProvider>();
 
-  constructor(private readonly channelResolver: ChannelResolver = defaultChannelResolver) {}
+  constructor(
+    private readonly channelResolver: ChannelResolver = defaultChannelResolver,
+    private readonly consentResolver: ConsentResolver = defaultConsentResolver,
+  ) {}
 
   register(provider: NotificationProvider): void {
     this.providers.set(provider.channelType, provider);
@@ -51,10 +67,14 @@ export class NotificationService {
     to: string;
     body: string;
     purpose?: string;
+    customerId?: string;
   }): Promise<NotificationSendResult> {
     const channel = await this.channelResolver(opts.merchantId, opts.channelType);
     if (!channel) return { ok: false, error: "channel_not_found" };
     if (channel.status !== "CONNECTED") return { ok: false, error: "channel_not_connected" };
+    if (opts.customerId && !(await this.consentResolver(opts.customerId))) {
+      return { ok: false, error: "consent_required" };
+    }
     const provider = this.providers.get(opts.channelType);
     if (!provider) return { ok: false, error: "no_provider" };
     return provider.send({

@@ -254,11 +254,12 @@ model ProductEmbedding {
 // ─── Customers / sessions / events ──────────────────────────────────────────
 
 model Customer {
-  id         String    @id
-  merchantId String
-  email      String?
-  phone      String?
-  name       String?
+  id            String  @id
+  merchantId    String
+  email         String?
+  phone         String?
+  name          String?
+  whatsappOptIn Boolean @default(false)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
