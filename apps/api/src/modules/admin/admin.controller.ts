@@ -65,4 +65,21 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("events")
+  listEvents() {
+    return this.db.event.findMany({
+      select: {
+        id: true,
+        eventId: true,
+        merchantId: true,
+        websiteId: true,
+        eventType: true,
+        source: true,
+        occurredAt: true,
+        ingestedAt: true,
+      },
+      orderBy: { occurredAt: "desc" },
+    });
+  }
 }
