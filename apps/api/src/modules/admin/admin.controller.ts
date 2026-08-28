@@ -153,4 +153,21 @@ export class AdminController {
       orderBy: { createdAt: "desc" },
     });
   }
+
+  @Get("webhooks")
+  listWebhooks() {
+    return this.db.webhookEvent.findMany({
+      select: {
+        id: true,
+        provider: true,
+        externalEventId: true,
+        merchantId: true,
+        signatureValid: true,
+        status: true,
+        receivedAt: true,
+        processedAt: true,
+      },
+      orderBy: { receivedAt: "desc" },
+    });
+  }
 }
