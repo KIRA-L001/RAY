@@ -12,6 +12,7 @@ import cors from "@fastify/cors";
 import { Logger } from "nestjs-pino";
 import type { FastifyRequest } from "fastify";
 import { AppModule } from "./app.module";
+import { validateProductionSecrets, allowedOriginsFromEnv } from "./common/security/production-config";
 
 async function bootstrap(): Promise<void> {
   const adapter = new FastifyAdapter({
@@ -28,12 +29,16 @@ async function bootstrap(): Promise<void> {
   });
   app.useLogger(app.get(Logger));
 
+  // ponytail: fail fast in production if secrets are missing/dev defaults (Task 123).
+  validateProductionSecrets();
+
   adapter.getInstance().addHook("onSend", async (req, reply) => {
     reply.header("x-request-id", req.id);
   });
   await app.register(cookie);
   // Per-request CORS: strict credential allowlist for first-party apps;
   // /v1/events reflects any origin without credentials (public browser sensor).
+  const allowedOrigins = allowedOriginsFromEnv();
   await app.register(cors, {
     delegator: async (req: FastifyRequest) => {
       if (req.url.startsWith("/v1/events")) {
@@ -45,14 +50,7 @@ async function bootstrap(): Promise<void> {
         };
       }
       return {
-        // admin (3000), desktop dev (5173), tauri. Production origins via env (Task 123).
-        origin: [
-          "http://localhost:3000",
-          "http://localhost:5173",
-          "http://127.0.0.1:5173",
-          "tauri://localhost",
-          "http://tauri.localhost",
-        ],
+        origin: allowedOrigins,
         credentials: true,
       };
     },
