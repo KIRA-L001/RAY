@@ -39,7 +39,7 @@ export class WhatsAppWebhookController {
     @Param("channelId") channelId: string,
     @Req() req: RawBodyRequest,
     @Headers("x-hub-signature-256") signature: string,
-  ): Promise<{ ok: boolean; processed?: number; error?: string }> {
+  ): Promise<{ ok: boolean; processed?: number; replayed?: number; error?: string }> {
     const channel = await getDb().notificationChannel.findUnique({
       where: { id: channelId },
       select: { merchantId: true, encryptedConfig: true },
@@ -67,26 +67,39 @@ export class WhatsAppWebhookController {
 
     const statuses = extractStatuses(req.body as unknown as Parameters<typeof extractStatuses>[0]);
     let processed = 0;
+    let replayed = 0;
     for (const s of statuses) {
+      // ponytail: replay protection. Meta retries the same delivery; dedupe on the
+      // stable (message id, status) key so a resent status is not processed twice.
+      // Single-process dedup only; add a unique DB constraint if concurrent retries
+      // across instances become a concern.
+      const eventId = `${s.id}:${s.status}`;
+      const prior = await getDb().webhookEvent.findFirst({
+        where: { provider: "whatsapp", externalEventId: eventId, merchantId: channel.merchantId },
+        select: { id: true },
+      });
+      if (prior) {
+        replayed++;
+        continue;
+      }
       const updated = await getDb().notification.updateMany({
         where: { externalId: s.id, channelId },
         data: { status: s.status },
       });
       if (updated.count > 0) processed++;
+      await getDb().webhookEvent.create({
+        data: {
+          id: randomUUID(),
+          provider: "whatsapp",
+          externalEventId: eventId,
+          merchantId: channel.merchantId,
+          signatureValid: true,
+          status: "PROCESSED",
+          payload: (req.body ?? {}) as unknown as Json,
+        },
+      });
     }
 
-    await getDb().webhookEvent.create({
-      data: {
-        id: randomUUID(),
-        provider: "whatsapp",
-        externalEventId: randomUUID(),
-        merchantId: channel.merchantId,
-        signatureValid: true,
-        status: "PROCESSED",
-        payload: (req.body ?? {}) as unknown as Json,
-      },
-    });
-
-    return { ok: true, processed };
+    return { ok: true, processed, replayed };
   }
 }
